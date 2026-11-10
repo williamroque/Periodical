@@ -44,7 +44,7 @@ There are no accounts, no servers, and no telemetry. Your research focus, readin
 
 ## Where the Papers Come From (The Daily Pipeline)
 
-Periodical separates heavy data preparation from personal ranking. A static build script ([`pipeline.py`](file:///Users/jetblack/Desktop/Periodical/pipeline.py)) runs once per arXiv announcement cycle to produce [`data/today.json`](file:///Users/jetblack/Desktop/Periodical/data/today.json) and WebP figures under `data/figs/<YYYY-MM-DD>/`. Every user receives the exact same static bundle; all personalization happens client-side.
+Periodical separates heavy data preparation from personal ranking. A static build script ([`pipeline.py`](pipeline.py)) runs once per arXiv announcement cycle to produce [`data/today.json`](data/today.json) and WebP figures under `data/figs/<YYYY-MM-DD>/`. Every user receives the exact same static bundle; all personalization happens client-side.
 
 ```mermaid
 flowchart LR
@@ -59,7 +59,7 @@ flowchart LR
 
 ### 1. arXiv RSS Ingestion & Announcement Filtering
 
-[`fetch_rss_announcements()`](file:///Users/jetblack/Desktop/Periodical/pipeline.py#L281-L330) queries the official arXiv RSS feed (`https://rss.arxiv.org/rss/<ARXIV_FEED>`, defaulting to `astro-ph`).
+[`fetch_rss_announcements()`](pipeline.py#L281-L330) queries the official arXiv RSS feed (`https://rss.arxiv.org/rss/<ARXIV_FEED>`, defaulting to `astro-ph`).
 
 - **Announcement types:** Each `<item>` carries an `<arxiv:announce_type>` tag (`new`, `cross`, `replace`, or `replace-cross`). By default, Periodical keeps only **`new`** (fresh submissions in `astro-ph`) and **`cross`** (cross-lists from adjacent archives such as `gr-qc`, `hep-ph`, `physics.*`, `cs.LG`, or `stat.ML`), filtering out minor version replacements.
 - **Pool prioritization:** Candidates are sorted by announcement priority (`new` first, then `cross`, `replace`, `replace-cross`) and capped at `MAX_POOL` (default `200`).
@@ -67,7 +67,7 @@ flowchart LR
 
 ### 2. Metadata Enrichment via the arXiv API
 
-Because the RSS feed truncates metadata and lacks author comments or journal references, [`enrich_from_arxiv_api()`](file:///Users/jetblack/Desktop/Periodical/pipeline.py#L333-L367) queries the official arXiv Atom API in batches of 100 IDs (respecting a 3-second politeness delay with retries):
+Because the RSS feed truncates metadata and lacks author comments or journal references, [`enrich_from_arxiv_api()`](pipeline.py#L333-L367) queries the official arXiv Atom API in batches of 100 IDs (respecting a 3-second politeness delay with retries):
 
 - Replaces RSS author strings with structured author lists (preserving total author count in `n_authors` while capping exported lists at 60 names to keep payload sizes small).
 - Orders subject classifications so `primary_category` is guaranteed to be `cats[0]`, followed by secondary cross-listed categories.
@@ -75,40 +75,40 @@ Because the RSS feed truncates metadata and lacks author comments or journal ref
 
 ### 3. LaTeX-to-Unicode Sanitization & Signal Extraction
 
-Raw arXiv titles, abstracts, and figure captions are full of LaTeX markup (`$\Lambda$CDM`, `$\sim 10^{10}\,\mathrm{M_\odot}$`, `\textit{JWST}`). Rather than shipping a heavy client-side math renderer, [`TexReader`](file:///Users/jetblack/Desktop/Periodical/pipeline.py#L140-L254) and [`clean_tex()`](file:///Users/jetblack/Desktop/Periodical/pipeline.py#L260-L278) parse TeX trees into clean Unicode at build time:
+Raw arXiv titles, abstracts, and figure captions are full of LaTeX markup (`$\Lambda$CDM`, `$\sim 10^{10}\,\mathrm{M_\odot}$`, `\textit{JWST}`). Rather than shipping a heavy client-side math renderer, [`TexReader`](pipeline.py#L140-L254) and [`clean_tex()`](pipeline.py#L260-L278) parse TeX trees into clean Unicode at build time:
 
 - **Math & Astronomical Symbols:** Maps Greek letters (`\alpha` → `α`, `\Omega` → `Ω`), relations (`\lesssim` → `≲`, `\propto` → `∝`), and astrophysics notation (`\odot` / `\sun` → `☉`, `\oplus` → `⊕`, `\AA` → `Å`, `\arcsec` / `\farcs` → `″`, `\micron` → `μm`).
 - **Scripts & Fractions:** Converts short superscripts and subscripts inside math mode into native Unicode glyphs (`10^{-4}` → `10⁻⁴`, `H_0` → `H₀`), formats `\frac{a}{b}` as `a/b`, and `\sqrt{x}` as `√x`.
 - **Structural Signals:**
-  - **Code repositories ([`find_code_link()`](file:///Users/jetblack/Desktop/Periodical/pipeline.py#L369-L375)):** Scans both the abstract and author comments for URLs hosted on `github.com`, `*.github.io`, `gitlab.com`, `bitbucket.org`, `zenodo.org`, `codeberg.org`, `pypi.org`, `ascl.net`, or `huggingface.co`.
+  - **Code repositories ([`find_code_link()`](pipeline.py#L369-L375)):** Scans both the abstract and author comments for URLs hosted on `github.com`, `*.github.io`, `gitlab.com`, `bitbucket.org`, `zenodo.org`, `codeberg.org`, `pypi.org`, `ascl.net`, or `huggingface.co`.
   - **Venue acceptance:** Flags `accepted = True` if `journal_ref` is populated or if the author comment matches `\b(accepted|in press|published|to appear)\b`.
 
 ### 4. Lead Figure & Caption Extraction from arXiv HTML
 
-For each paper, [`download_paper_figure()`](file:///Users/jetblack/Desktop/Periodical/pipeline.py#L481-L536) checks whether arXiv has compiled an HTML5 edition at `https://arxiv.org/html/<id>v<version>`:
+For each paper, [`download_paper_figure()`](pipeline.py#L481-L536) checks whether arXiv has compiled an HTML5 edition at `https://arxiv.org/html/<id>v<version>`:
 
-1. **HTML Parsing ([`ArxivHtmlFigureParser`](file:///Users/jetblack/Desktop/Periodical/pipeline.py#L377-L443)):** Walks `<figure class="ltx_figure">` elements (explicitly excluding `ltx_table`), collecting raster `<img>` dimensions and `<figcaption>` text while converting embedded `<math alttext="...">` nodes back into inline TeX for Unicode sanitization.
-2. **Candidate Selection ([`select_best_figure()`](file:///Users/jetblack/Desktop/Periodical/pipeline.py#L445-L469)):** Inspects up to the first 5 figures in the paper, ignores `.svg` icons, selects the largest raster image in each figure by pixel area, and scores candidates using:
+1. **HTML Parsing ([`ArxivHtmlFigureParser`](pipeline.py#L377-L443)):** Walks `<figure class="ltx_figure">` elements (explicitly excluding `ltx_table`), collecting raster `<img>` dimensions and `<figcaption>` text while converting embedded `<math alttext="...">` nodes back into inline TeX for Unicode sanitization.
+2. **Candidate Selection ([`select_best_figure()`](pipeline.py#L445-L469)):** Inspects up to the first 5 figures in the paper, ignores `.svg` icons, selects the largest raster image in each figure by pixel area, and scores candidates using:
    $$\text{score}_{\text{fig}} = -0.6 \cdot \text{rank} - \begin{cases} 1.2 & \text{if aspect ratio } \frac{w}{h} \notin [0.75, 2.1] \\ 0 & \text{otherwise} \end{cases} - \begin{cases} 0.8 & \text{if } n_{\text{imgs}} > 4 \\ 0 & \text{otherwise} \end{cases}$$
    This strongly favors Figure 1 unless it has an extreme panoramic/skyscraper aspect ratio or is a fragmented multi-panel grid.
 3. **WebP Optimization:** Downloads the winning image, rejects tiny thumbnails (`< 160×100`), composites transparent RGBA/palette images onto a crisp white canvas, downscales to fit within `1100×1100` px (`Image.LANCZOS`), and saves as WebP (`quality=76, method=6`). Old figure directories beyond `KEEP_DAYS` (default `3`) are pruned automatically.
 
 ### 5. Semantic Embedding & Int8 Vector Quantization
 
-[`compute_embeddings()`](file:///Users/jetblack/Desktop/Periodical/pipeline.py#L562-L575) embeds every paper's `"<title>. <abstract>"` using **`BAAI/bge-small-en-v1.5`** (via `fastembed`), producing a 384-dimensional L2-normalized `float32` vector $\mathbf{v} \in \mathbb{R}^{384}$.
+[`compute_embeddings()`](pipeline.py#L562-L575) embeds every paper's `"<title>. <abstract>"` using **`BAAI/bge-small-en-v1.5`** (via `fastembed`), producing a 384-dimensional L2-normalized `float32` vector $\mathbf{v} \in \mathbb{R}^{384}$.
 
 To keep `data/today.json` lightweight (~220 KB for 200 papers) without sacrificing cosine similarity accuracy, each unit vector is symmetrically quantized to signed 8-bit integers (`int8`) and Base64-encoded:
 
 $$q_d = \operatorname{clip}\!\left(\operatorname{round}\!\left(\frac{v_d}{\max_k |v_k|} \times 127\right), -127, 127\right) \in \mathbb{Z}_8$$
 
-Each 384-D vector occupies just **384 bytes** (512 Base64 characters). In the browser, [`decodeVector()`](file:///Users/jetblack/Desktop/Periodical/js/vectors.js#L20-L34) decodes the bytes and L2-normalizes the resulting `Float32Array`, recovering the original unit direction since global scale cancels out upon normalization.
+Each 384-D vector occupies just **384 bytes** (512 Base64 characters). In the browser, [`decodeVector()`](js/vectors.js#L20-L34) decodes the bytes and L2-normalizes the resulting `Float32Array`, recovering the original unit direction since global scale cancels out upon normalization.
 
 ### 6. Concrete One-Line Micro-Summaries
 
-Every card leads with a single-sentence digest (`micro`) designed for rapid triage ([`generate_summaries()`](file:///Users/jetblack/Desktop/Periodical/pipeline.py#L622-L689)):
+Every card leads with a single-sentence digest (`micro`) designed for rapid triage ([`generate_summaries()`](pipeline.py#L622-L689)):
 
 - **LLM Digest (Primary):** Queries an OpenAI-compatible chat completion API (defaulting to `openai/gpt-4o-mini` in batches of 8, caching previous runs by paper ID) with a strict system prompt: *one sentence of at most 24 words stating the concrete finding, measurement, model, or prediction with its key number, never starting with meta-phrases like "This paper" or "We show"*.
-- **Extractive Heuristic Fallback ([`build_heuristic_summary()`](file:///Users/jetblack/Desktop/Periodical/pipeline.py#L588-L620)):** When no API key is configured—or if an API call fails—Periodical falls back to a deterministic sentence scorer over the abstract:
+- **Extractive Heuristic Fallback ([`build_heuristic_summary()`](pipeline.py#L588-L620)):** When no API key is configured—or if an API call fails—Periodical falls back to a deterministic sentence scorer over the abstract:
   $$\text{score}_{\text{sent}}(i, s) = 2.0 \cdot \mathbb{I}[\text{finding cue in } s] + 0.8 \cdot \frac{i}{N_{\text{sents}}} - 1.5 \cdot \mathbb{I}[\text{words}(s) > 45]$$
   It strips boilerplate prefixes (*"In this study, our results show that..."*) and truncates cleanly at a clause boundary around 28 words.
 
@@ -116,7 +116,7 @@ Every card leads with a single-sentence digest (`micro`) designed for rapid tria
 
 ## The On-Device Ranking Algorithm
 
-All ranking logic lives in [`js/ranking.js`](file:///Users/jetblack/Desktop/Periodical/js/ranking.js), [`js/state.js`](file:///Users/jetblack/Desktop/Periodical/js/state.js), and [`js/vectors.js`](file:///Users/jetblack/Desktop/Periodical/js/vectors.js). Whenever a new daily feed loads—or when you update your preferences—[`rankCandidatePool()`](file:///Users/jetblack/Desktop/Periodical/js/ranking.js#L124-L278) executes a six-stage pipeline in under a few milliseconds.
+All ranking logic lives in [`js/ranking.js`](js/ranking.js), [`js/state.js`](js/state.js), and [`js/vectors.js`](js/vectors.js). Whenever a new daily feed loads—or when you update your preferences—[`rankCandidatePool()`](js/ranking.js#L124-L278) executes a six-stage pipeline in under a few milliseconds.
 
 ```mermaid
 flowchart TD
@@ -143,9 +143,9 @@ flowchart TD
 
 A key architectural challenge in a zero-backend app is matching a user's free-text **Research focus** prompt against 384-dimensional neural paper embeddings without downloading a 100+ MB embedding model into the browser.
 
-[`synthesizePromptVector()`](file:///Users/jetblack/Desktop/Periodical/js/ranking.js#L22-L89) solves this by using today's 200-paper pool as a **lexical-to-semantic bridge**:
+[`synthesizePromptVector()`](js/ranking.js#L22-L89) solves this by using today's 200-paper pool as a **lexical-to-semantic bridge**:
 
-1. **Tokenization & Light Stemming ([`tokenizeText()`](file:///Users/jetblack/Desktop/Periodical/js/ranking.js#L13-L18)):** Lowercases text, strips stop words and tokens $\le 2$ chars, and normalizes plurals (`galaxies` → `galaxy`, `simulations` → `simulation`).
+1. **Tokenization & Light Stemming ([`tokenizeText()`](js/ranking.js#L13-L18)):** Lowercases text, strips stop words and tokens $\le 2$ chars, and normalizes plurals (`galaxies` → `galaxy`, `simulations` → `simulation`).
 2. **Okapi BM25 Scoring:** Treats each paper in today's pool as a document where title tokens are weighted $2\times$ (`"${title} ${title} ${abstract}"`). For query terms $t \in Q$:
    $$\operatorname{IDF}(t) = \ln\!\left(1 + \frac{N - \operatorname{df}(t) + 0.5}{\operatorname{df}(t) + 0.5}\right), \quad \operatorname{BM25}(d, Q) = \sum_{t \in Q} \operatorname{IDF}(t) \cdot \frac{f_{t,d} \cdot (k_1 + 1)}{f_{t,d} + k_1 \left(1 - b + b \frac{|d|}{\text{avgdl}}\right)}$$
    with standard parameters $k_1 = 1.2$ and $b = 0.75$.
@@ -156,11 +156,11 @@ Even if a relevant paper shares **zero exact keywords** with your prompt, it wil
 
 ### Stage 2: Implicit & Explicit Behavioral Signal Capture
 
-As you triage cards, Periodical tracks two per-paper metrics in [`js/state.js`](file:///Users/jetblack/Desktop/Periodical/js/state.js#L149-L210):
+As you triage cards, Periodical tracks two per-paper metrics in [`js/state.js`](js/state.js#L149-L210):
 - **Interaction Phase (`ph`):** `0` (*Seen*), `1` (*Read* — expanded abstract), `2` (*Opened* — clicked PDF or HTML), `3` (*Saved* — added to Library).
 - **Active Dwell Time (`dw`):** Milliseconds spent with the card visible in the foreground (automatically paused on `visibilitychange` when switching tabs or windows).
 
-[`computeSignalWeight()`](file:///Users/jetblack/Desktop/Periodical/js/state.js#L149-L172) converts these actions into a signed learning weight $w \in [-1.0, +1.0]$ stored alongside the paper's quantized vector in `state.mem`:
+[`computeSignalWeight()`](js/state.js#L149-L172) converts these actions into a signed learning weight $w \in [-1.0, +1.0]$ stored alongside the paper's quantized vector in `state.mem`:
 
 | User Action / Engagement Level | Condition | Signal Weight ($w$) |
 | :--- | :--- | :--- |
@@ -174,7 +174,7 @@ As you triage cards, Periodical tracks two per-paper metrics in [`js/state.js`](
 
 ### Stage 3: Asymmetric Time Decay & Dynamic Profile Blending
 
-Research interests evolve, and skipping a paper on a busy morning shouldn't permanently banish a topic. [`getDecayedMemoryVectors()`](file:///Users/jetblack/Desktop/Periodical/js/ranking.js#L91-L122) applies exponential decay based on the elapsed age $\Delta t$ (in days) using **asymmetric half-lives**:
+Research interests evolve, and skipping a paper on a busy morning shouldn't permanently banish a topic. [`getDecayedMemoryVectors()`](js/ranking.js#L91-L122) applies exponential decay based on the elapsed age $\Delta t$ (in days) using **asymmetric half-lives**:
 
 $$s_i = |w_i| \cdot 0.5^{\Delta t_i / T_{1/2}}, \quad \text{where } T_{1/2} = \begin{cases} 45\text{ days} & \text{if } w_i > 0 \text{ (positive signals persist)} \\ 21\text{ days} & \text{if } w_i < 0 \text{ (negative skips fade } >2\times \text{ faster)} \end{cases}$$
 
@@ -202,7 +202,7 @@ $$s_{\text{neg}}(\mathbf{v}) = \max_{j \in N} \Big[(\mathbf{v} \cdot \mathbf{v}_
 
 $$\operatorname{affinity}(\mathbf{v}) = \begin{cases} 0.6\,(\mathbf{v} \cdot \hat{\mathbf{p}}) + 0.4\,s_{\text{pos}}(\mathbf{v}) & \text{if } |P| \ge 2 \\ \mathbf{v} \cdot \hat{\mathbf{p}} & \text{otherwise} \end{cases}$$
 
-Because raw cosine similarities in transformer embedding spaces occupy a narrow positive cone, [`computeZScores()`](file:///Users/jetblack/Desktop/Periodical/js/vectors.js#L72-L89) standardizes both $\operatorname{affinity}(\mathbf{v})$ and $s_{\text{neg}}(\mathbf{v})$ across today's candidate pool to zero mean and unit variance ($z_{\text{aff}}$ and $z_{\text{neg}}$). That guarantees additive priors have consistent leverage every day:
+Because raw cosine similarities in transformer embedding spaces occupy a narrow positive cone, [`computeZScores()`](js/vectors.js#L72-L89) standardizes both $\operatorname{affinity}(\mathbf{v})$ and $s_{\text{neg}}(\mathbf{v})$ across today's candidate pool to zero mean and unit variance ($z_{\text{aff}}$ and $z_{\text{neg}}$). That guarantees additive priors have consistent leverage every day:
 
 $$\operatorname{score}(\mathbf{v}) = z_{\text{aff}}(\mathbf{v}) - w_{\text{neg}} \max\!\big(0, z_{\text{neg}}(\mathbf{v})\big) + Q(\mathbf{v}) + C(\mathbf{v}) + \epsilon$$
 
@@ -220,7 +220,7 @@ where:
 
 Ranking purely by $\operatorname{score}(\mathbf{v})$ would pack your stack with near-duplicate papers when a large collaboration drops 6 companion papers on the same day. Periodical prevents clustering and filter bubbles in two ways:
 
-1. **Adaptive Pool Similarity Threshold ($\tau$):** On feed load, [`estimateSimilarityThreshold()`](file:///Users/jetblack/Desktop/Periodical/js/state.js#L134-L147) samples pairwise cosine similarities across today's papers and sets $\tau$ to the **92nd percentile** (typically $\tau \approx 0.79\text{–}0.82$).
+1. **Adaptive Pool Similarity Threshold ($\tau$):** On feed load, [`estimateSimilarityThreshold()`](js/state.js#L134-L147) samples pairwise cosine similarities across today's papers and sets $\tau$ to the **92nd percentile** (typically $\tau \approx 0.79\text{–}0.82$).
 2. **Greedy Redundancy-Penalized Selection (85% of stack):** For the main exploitation slots ($N_{\text{main}} = N_{\text{target}} - N_{\text{explore}}$), Periodical greedily picks the candidate maximizing:
    $$\operatorname{score}_{\text{MMR}}(\mathbf{v}) = \operatorname{score}(\mathbf{v}) - 1.7 \cdot \frac{\max(0,\, r(\mathbf{v}) - \tau)}{1 - \tau}, \quad \text{where } r(\mathbf{v}) = \max_{\mathbf{u} \in S_{\text{picked}}} (\mathbf{v} \cdot \mathbf{u})$$
    Below $\tau$, there is zero diversity penalty; above $\tau$, the linear overflow penalty rapidly suppresses redundant companion papers.
@@ -231,7 +231,7 @@ Ranking purely by $\operatorname{score}(\mathbf{v})$ would pack your stack with 
 
 ### Stage 6: Transparent Selection Explanations
 
-Every selected card is annotated by [`explainSelection()`](file:///Users/jetblack/Desktop/Periodical/js/ranking.js#L280-L297) with the strongest human-readable reason why it made your stack:
+Every selected card is annotated by [`explainSelection()`](js/ranking.js#L280-L297) with the strongest human-readable reason why it made your stack:
 
 1. **Detour:** *"Outside your usual — a deliberate detour"* (`isExplore === true`)
 2. **Exemplar Match:** *"Close to “\<Title of previously liked paper\>”"* ($s_{\text{pos}} > \tau + 0.02$)
@@ -263,10 +263,10 @@ Periodical is designed for rapid, single-keystroke triage on desktop and fluid o
 
 ## Zotero & BibTeX Workflow
 
-[`js/bibtex.js`](file:///Users/jetblack/Desktop/Periodical/js/bibtex.js) generates standards-compliant `@misc` BibTeX records tailored for astrophysics and Zotero:
+[`js/bibtex.js`](js/bibtex.js) generates standards-compliant `@misc` BibTeX records tailored for astrophysics and Zotero:
 
 - **Citation Keys:** Automatically formatted as `<firstauthor><year><first_significant_title_word>` (e.g., `smith2026jwst`), with automatic `a, b, c...` disambiguation on collisions.
-- **Author Parsing ([`formatBibtexAuthor()`](file:///Users/jetblack/Desktop/Periodical/js/bibtex.js#L31-L47)):** Properly handles nobiliary particles (`van der Waals, Johannes`, `de la Fuente Marcos, C.`), generational suffixes (`Jr.`, `III`), and collaboration names (wrapping `JWSTero Collaboration` or `DESI Collaboration` in protective braces `{...}`).
+- **Author Parsing ([`formatBibtexAuthor()`](js/bibtex.js#L31-L47)):** Properly handles nobiliary particles (`van der Waals, Johannes`, `de la Fuente Marcos, C.`), generational suffixes (`Jr.`, `III`), and collaboration names (wrapping `JWSTero Collaboration` or `DESI Collaboration` in protective braces `{...}`).
 - **Incremental Export Tracking:** Your Library tracks which saved papers have already been exported (`exported: true/false`). The header badge shows the count of **unexported** saves, and clicking **Export N new to Zotero** downloads a `.bib` file (or invokes the native mobile share sheet) containing only your newly saved papers.
 
 ---
@@ -294,7 +294,7 @@ python3 pipeline.py
 
 #### Pipeline Environment Variables
 
-You can customize [`pipeline.py`](file:///Users/jetblack/Desktop/Periodical/pipeline.py#L20-L33) for different arXiv archives, pool sizes, or LLM providers using environment variables:
+You can customize [`pipeline.py`](pipeline.py#L20-L33) for different arXiv archives, pool sizes, or LLM providers using environment variables:
 
 | Variable | Default | Description |
 | :--- | :--- | :--- |
