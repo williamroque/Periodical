@@ -215,7 +215,12 @@ let suppressNextClick = false;
 export function bindCardInteractions(cardEl, paper) {
     const zoomPlate = select('[data-zoom]', cardEl);
     if (zoomPlate) {
-        zoomPlate.addEventListener('click', () => openFigureLightbox(paper));
+        zoomPlate.addEventListener('click', () => {
+            if (suppressNextClick) {
+                return;
+            }
+            openFigureLightbox(paper);
+        });
     }
 
     select('.head', cardEl).addEventListener('click', () => {
@@ -244,83 +249,214 @@ export function bindCardInteractions(cardEl, paper) {
     let startY = 0;
     let startTime = 0;
     let deltaX = 0;
+    let deltaY = 0;
     let isDragging = false;
     let isTracking = false;
-    let activePointerId = null;
+    let gestureAxis = null;
 
-    cardEl.addEventListener('pointerdown', (event) => {
-        if (event.pointerType === 'mouse' || isTransitioning || event.target.closest('a,button')) {
-            return;
-        }
-        isTracking = true;
-        isDragging = false;
-        activePointerId = event.pointerId;
-        startX = event.clientX;
-        startY = event.clientY;
-        startTime = performance.now();
-        deltaX = 0;
-    });
-
-    cardEl.addEventListener('pointermove', (event) => {
-        if (!isTracking || event.pointerId !== activePointerId) {
-            return;
-        }
-        deltaX = event.clientX - startX;
-        const deltaY = event.clientY - startY;
-
-        if (!isDragging) {
-            if (Math.abs(deltaX) > 10 && Math.abs(deltaX) > Math.abs(deltaY) * 1.4) {
-                isDragging = true;
-                cardEl.classList.add('dragging');
-                cardEl.setPointerCapture(activePointerId);
-            } else if (Math.abs(deltaY) > 12) {
-                isTracking = false;
-                return;
-            } else {
-                return;
-            }
-        }
-
-        const translateY = Math.abs(deltaX) * 0.06;
-        const rotation = deltaX / 24;
-        cardEl.style.transform = `translate3d(${deltaX}px, ${translateY}px, 0) rotate(${rotation}deg)`;
-
-        const stampOpacity = clamp(Math.abs(deltaX) / 110, 0, 1);
-        skipStamp.style.opacity = deltaX < 0 ? stampOpacity : 0;
-        saveStamp.style.opacity = deltaX > 0 ? stampOpacity : 0;
-    });
-
-    function finishPointerGesture(event) {
-        if (!isTracking || event.pointerId !== activePointerId) {
-            return;
-        }
+    function resetGestureState() {
         isTracking = false;
-        if (!isDragging) {
-            return;
-        }
-        suppressNextClick = true;
-        setTimeout(() => {
-            suppressNextClick = false;
-        }, 60);
-
-        cardEl.classList.remove('dragging');
-        const velocity = deltaX / Math.max(1, performance.now() - startTime);
-        const width = cardEl.offsetWidth;
-        const isCancelled = event.type === 'pointercancel';
-
-        if (!isCancelled && (deltaX > width * 0.3 || (deltaX > 50 && velocity > 0.55))) {
-            navigator.vibrate?.(8);
-            saveCurrentPaper();
-        } else if (!isCancelled && (deltaX < -width * 0.3 || (deltaX < -50 && velocity < -0.55))) {
-            navigator.vibrate?.(8);
-            skipCurrentPaper();
-        } else {
-            cardEl.style.transform = '';
-            skipStamp.style.opacity = 0;
-            saveStamp.style.opacity = 0;
-        }
+        isDragging = false;
+        gestureAxis = null;
     }
 
-    cardEl.addEventListener('pointerup', finishPointerGesture);
-    cardEl.addEventListener('pointercancel', finishPointerGesture);
+    if ('ontouchstart' in window) {
+        let activeTouchId = null;
+
+        cardEl.addEventListener('touchstart', (event) => {
+            if (isTransitioning || event.target.closest('a,button')) {
+                return;
+            }
+            if (event.touches.length !== 1) {
+                return;
+            }
+            const touch = event.touches[0];
+            activeTouchId = touch.identifier;
+            isTracking = true;
+            isDragging = false;
+            gestureAxis = null;
+            startX = touch.clientX;
+            startY = touch.clientY;
+            startTime = performance.now();
+            deltaX = 0;
+            deltaY = 0;
+        }, { passive: true });
+
+        cardEl.addEventListener('touchmove', (event) => {
+            if (!isTracking) {
+                return;
+            }
+            const touch = Array.from(event.changedTouches).find((t) => t.identifier === activeTouchId);
+            if (!touch) {
+                return;
+            }
+            deltaX = touch.clientX - startX;
+            deltaY = touch.clientY - startY;
+            const absX = Math.abs(deltaX);
+            const absY = Math.abs(deltaY);
+
+            if (gestureAxis === null) {
+                if (absX < 7 && absY < 7) {
+                    return;
+                }
+                if (absX > absY) {
+                    gestureAxis = 'x';
+                    isDragging = true;
+                    cardEl.classList.add('dragging');
+                } else {
+                    gestureAxis = 'y';
+                    isTracking = false;
+                    return;
+                }
+            }
+
+            if (gestureAxis === 'x') {
+                if (event.cancelable) {
+                    event.preventDefault();
+                }
+                const translateY = Math.abs(deltaX) * 0.06;
+                const rotation = deltaX / 24;
+                cardEl.style.transform = `translate3d(${deltaX}px, ${translateY}px, 0) rotate(${rotation}deg)`;
+
+                const stampOpacity = clamp(Math.abs(deltaX) / 110, 0, 1);
+                skipStamp.style.opacity = deltaX < 0 ? stampOpacity : 0;
+                saveStamp.style.opacity = deltaX > 0 ? stampOpacity : 0;
+            }
+        }, { passive: false });
+
+        const finishTouchGesture = (event) => {
+            if (!isTracking && !isDragging) {
+                resetGestureState();
+                activeTouchId = null;
+                return;
+            }
+            const touch = Array.from(event.changedTouches).find((t) => t.identifier === activeTouchId);
+            if (touch) {
+                deltaX = touch.clientX - startX;
+            }
+            const wasDragging = isDragging;
+            const isCancelled = event.type === 'touchcancel';
+            resetGestureState();
+            activeTouchId = null;
+
+            if (!wasDragging) {
+                return;
+            }
+
+            suppressNextClick = true;
+            setTimeout(() => {
+                suppressNextClick = false;
+            }, 120);
+
+            cardEl.classList.remove('dragging');
+            const velocity = deltaX / Math.max(1, performance.now() - startTime);
+            const width = cardEl.offsetWidth;
+
+            if (!isCancelled && (deltaX > width * 0.28 || (deltaX > 40 && velocity > 0.45))) {
+                navigator.vibrate?.(8);
+                saveCurrentPaper();
+            } else if (!isCancelled && (deltaX < -width * 0.28 || (deltaX < -40 && velocity < -0.45))) {
+                navigator.vibrate?.(8);
+                skipCurrentPaper();
+            } else {
+                cardEl.style.transform = '';
+                skipStamp.style.opacity = 0;
+                saveStamp.style.opacity = 0;
+            }
+        };
+
+        cardEl.addEventListener('touchend', finishTouchGesture);
+        cardEl.addEventListener('touchcancel', finishTouchGesture);
+    } else {
+        let activePointerId = null;
+
+        cardEl.addEventListener('pointerdown', (event) => {
+            if (event.pointerType === 'mouse' || isTransitioning || event.target.closest('a,button')) {
+                return;
+            }
+            isTracking = true;
+            isDragging = false;
+            gestureAxis = null;
+            activePointerId = event.pointerId;
+            startX = event.clientX;
+            startY = event.clientY;
+            startTime = performance.now();
+            deltaX = 0;
+            deltaY = 0;
+        });
+
+        cardEl.addEventListener('pointermove', (event) => {
+            if (!isTracking || event.pointerId !== activePointerId) {
+                return;
+            }
+            deltaX = event.clientX - startX;
+            deltaY = event.clientY - startY;
+            const absX = Math.abs(deltaX);
+            const absY = Math.abs(deltaY);
+
+            if (gestureAxis === null) {
+                if (absX < 7 && absY < 7) {
+                    return;
+                }
+                if (absX > absY) {
+                    gestureAxis = 'x';
+                    isDragging = true;
+                    cardEl.classList.add('dragging');
+                    cardEl.setPointerCapture(activePointerId);
+                } else {
+                    gestureAxis = 'y';
+                    isTracking = false;
+                    return;
+                }
+            }
+
+            if (gestureAxis === 'x') {
+                const translateY = Math.abs(deltaX) * 0.06;
+                const rotation = deltaX / 24;
+                cardEl.style.transform = `translate3d(${deltaX}px, ${translateY}px, 0) rotate(${rotation}deg)`;
+
+                const stampOpacity = clamp(Math.abs(deltaX) / 110, 0, 1);
+                skipStamp.style.opacity = deltaX < 0 ? stampOpacity : 0;
+                saveStamp.style.opacity = deltaX > 0 ? stampOpacity : 0;
+            }
+        });
+
+        const finishPointerGesture = (event) => {
+            if (!isTracking || event.pointerId !== activePointerId) {
+                return;
+            }
+            const wasDragging = isDragging;
+            const isCancelled = event.type === 'pointercancel';
+            resetGestureState();
+            activePointerId = null;
+
+            if (!wasDragging) {
+                return;
+            }
+
+            suppressNextClick = true;
+            setTimeout(() => {
+                suppressNextClick = false;
+            }, 120);
+
+            cardEl.classList.remove('dragging');
+            const velocity = deltaX / Math.max(1, performance.now() - startTime);
+            const width = cardEl.offsetWidth;
+
+            if (!isCancelled && (deltaX > width * 0.28 || (deltaX > 40 && velocity > 0.45))) {
+                navigator.vibrate?.(8);
+                saveCurrentPaper();
+            } else if (!isCancelled && (deltaX < -width * 0.28 || (deltaX < -40 && velocity < -0.45))) {
+                navigator.vibrate?.(8);
+                skipCurrentPaper();
+            } else {
+                cardEl.style.transform = '';
+                skipStamp.style.opacity = 0;
+                saveStamp.style.opacity = 0;
+            }
+        };
+
+        cardEl.addEventListener('pointerup', finishPointerGesture);
+        cardEl.addEventListener('pointercancel', finishPointerGesture);
+    }
 }

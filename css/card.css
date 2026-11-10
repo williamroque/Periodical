@@ -78,6 +78,17 @@
 
 .card.dragging {
     transition: none;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.card.dragging .card-scroll {
+    overflow-y: hidden;
+    pointer-events: none;
+}
+
+.card.dragging .stamp {
+    transition: none;
 }
 
 .card.out-left {
@@ -121,6 +132,7 @@
     overscroll-behavior: contain;
     scrollbar-width: none;
     -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
 }
 
 .card-scroll::-webkit-scrollbar {
