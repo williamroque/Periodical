@@ -3,13 +3,17 @@ import { ICONS } from './icons.js';
 import { abbreviateAuthorName, clamp, escapeHtml, formatIsoDate, select } from './utils.js';
 import { decodedVectorCache } from './vectors.js';
 import {
+    activateDayStack,
+    archiveState,
     flushState,
     getCurrentPaper,
     getSavedIdSet,
+    ingestDailyFeed,
     pool,
     replaceState,
     scheduleSave,
     state,
+    stopDwellTimer,
 } from './state.js';
 import { buildDailyStack, rerankRemainingStack } from './ranking.js';
 import { copyTextToClipboard, downloadOrShareFile, formatBibtex } from './bibtex.js';
@@ -25,7 +29,9 @@ import {
 
 const libraryDialog = select('#library');
 const settingsDialog = select('#settings');
+const archiveDialog = select('#archive');
 let settingsDraft = null;
+let isSwitchingArchiveDay = false;
 
 export function renderLibraryBadge() {
     const unexportedCount = state.lib.filter((entry) => !entry.exported).length;
@@ -90,6 +96,83 @@ export function openLibraryDialog() {
     libraryDialog.showModal();
 }
 
+export function renderArchiveList() {
+    const days = archiveState.days.length > 0
+        ? archiveState.days
+        : (pool.date ? [{ date: pool.date, count: pool.papers.length }] : []);
+
+    select('#arcCount').textContent = days.length > 0 ? `${days.length} day${days.length > 1 ? 's' : ''}` : '';
+
+    if (days.length === 0) {
+        select('#arcList').innerHTML = `<div class='empty'><b>No archive yet</b>Run pipeline.py to build the archive.</div>`;
+        return;
+    }
+
+    select('#arcList').innerHTML = days.map((entry) => {
+        const isCurrent = entry.date === pool.date;
+        const isToday = entry.date === archiveState.todayDate;
+        const dateTitle = formatIsoDate(entry.date, { weekday: 'short', day: 'numeric', month: 'short' });
+        const subTitle = isToday ? 'Today' : `${entry.count} papers`;
+
+        const dayStack = (state.day && state.day.date === entry.date)
+            ? state.day
+            : state.days?.[entry.date];
+        let progressText = `${entry.count} papers`;
+        if (dayStack && dayStack.ids.length > 0) {
+            progressText = dayStack.i >= dayStack.ids.length
+                ? 'Caught up'
+                : `Paper ${dayStack.i + 1} of ${dayStack.ids.length}`;
+        }
+
+        return `
+            <button class='arc-item' data-date='${escapeHtml(entry.date)}' aria-current='${isCurrent ? 'date' : 'false'}'>
+                <span class='arc-date'>
+                    <b>${escapeHtml(dateTitle)}</b>
+                    <span>${escapeHtml(subTitle)}</span>
+                </span>
+                <span class='arc-meta'>${escapeHtml(progressText)}</span>
+            </button>`;
+    }).join('');
+}
+
+export function openArchiveDialog() {
+    renderArchiveList();
+    archiveDialog.showModal();
+}
+
+async function selectArchiveDate(date) {
+    if (isSwitchingArchiveDay) {
+        return;
+    }
+    if (date === pool.date) {
+        archiveDialog.close();
+        return;
+    }
+
+    isSwitchingArchiveDay = true;
+    try {
+        stopDwellTimer();
+        flushState();
+        const url = date === archiveState.todayDate ? 'data/today.json' : `data/archive/${date}.json`;
+        const response = await fetch(url, { cache: 'no-cache' });
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        ingestDailyFeed(await response.json());
+        if (state.onboarded && pool.papers.length > 0 && !activateDayStack(pool.date)) {
+            buildDailyStack();
+        }
+        flushState();
+        archiveDialog.close();
+        renderApp('in');
+    } catch (err) {
+        console.warn('Could not load archive feed', err);
+        showToast('Could not load that day’s papers');
+    } finally {
+        isSwitchingArchiveDay = false;
+    }
+}
+
 export function openSettingsDialog() {
     settingsDraft = { theme: state.theme };
     select('#setPrompt').value = state.prompt;
@@ -114,6 +197,13 @@ export function updateThemeControlButtons(activeTheme) {
 }
 
 export function initDialogs() {
+    select('#arcList').addEventListener('click', (event) => {
+        const btn = event.target.closest('button[data-date]');
+        if (btn) {
+            selectArchiveDate(btn.dataset.date);
+        }
+    });
+
     select('#libList').addEventListener('click', (event) => {
         const actionBtn = event.target.closest('button[data-act]');
         if (!actionBtn) {
@@ -239,7 +329,7 @@ export function initDialogs() {
             replaceState({ ...structuredClone(DEFAULT_STATE), ...parsed });
             settingsDraft = null;
             decodedVectorCache.clear();
-            if (!state.day || state.day.date !== pool.date) {
+            if (state.onboarded && pool.papers.length > 0 && !activateDayStack(pool.date)) {
                 buildDailyStack();
             }
             flushState();

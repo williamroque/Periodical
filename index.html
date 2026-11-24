@@ -35,6 +35,7 @@
                 <span class='brand-date' id='date'></span>
             </div>
             <div class='top-actions'>
+                <button class='icon-btn' id='archiveBtn' aria-label='Archive' title='Archive (A)'></button>
                 <button class='icon-btn' id='libBtn' aria-label='Library' title='Library (L)'></button>
                 <button class='icon-btn' id='setBtn' aria-label='Settings' title='Settings (,)'></button>
             </div>
@@ -123,6 +124,16 @@
         <div class='lib-list' id='libList'></div>
     </dialog>
 
+    <dialog id='archive' aria-labelledby='arcTitle'>
+        <div class='d-head'>
+            <h2 class='d-title' id='arcTitle'>Archive <small id='arcCount'></small></h2>
+            <button class='icon-btn' data-close aria-label='Close'></button>
+        </div>
+        <div class='d-body'>
+            <div class='arc-list' id='arcList'></div>
+        </div>
+    </dialog>
+
     <dialog id='keys' aria-labelledby='keysTitle'>
         <div class='d-head'>
             <h2 class='d-title' id='keysTitle'>Shortcuts</h2>
@@ -137,6 +148,7 @@
                 <span><kbd>U</kbd><kbd>⌫</kbd></span><span>Back to the previous paper</span>
                 <span><kbd>F</kbd></span><span>Enlarge the figure</span>
                 <span><kbd>C</kbd></span><span>Copy BibTeX</span>
+                <span><kbd>A</kbd></span><span>Archive</span>
                 <span><kbd>L</kbd></span><span>Library</span>
                 <span><kbd>,</kbd></span><span>Preferences</span>
             </div>

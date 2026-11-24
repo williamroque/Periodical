@@ -7,7 +7,12 @@ export function loadUserState() {
     try {
         const savedJson = localStorage.getItem(STORAGE_KEY) || localStorage.getItem('triage.v4');
         if (savedJson) {
-            return { ...structuredClone(DEFAULT_STATE), ...JSON.parse(savedJson) };
+            const loaded = { ...structuredClone(DEFAULT_STATE), ...JSON.parse(savedJson) };
+            loaded.days = loaded.days && typeof loaded.days === 'object' ? loaded.days : {};
+            if (loaded.day && loaded.day.date && !loaded.days[loaded.day.date]) {
+                loaded.days[loaded.day.date] = loaded.day;
+            }
+            return loaded;
         }
         const legacyRaw = localStorage.getItem('arxiv_triage_cfg_v3');
         const legacy = JSON.parse(legacyRaw || 'null');
@@ -226,4 +231,38 @@ export function getCurrentPaper() {
         return null;
     }
     return pool.byId.get(state.day.ids[state.day.i]) || null;
+}
+
+export const archiveState = {
+    todayDate: null,
+    days: [],
+};
+
+export function activateDayStack(date) {
+    if (!state.days || typeof state.days !== 'object') {
+        state.days = {};
+    }
+    if (state.day && state.day.date) {
+        state.days[state.day.date] = state.day;
+    }
+    const existing = state.days[date];
+    if (existing) {
+        existing.ids = existing.ids.filter((id) => pool.byId.has(id));
+        state.day = existing;
+        return true;
+    }
+    state.day = null;
+    return false;
+}
+
+export function pruneDayStacks(maxDays = 14) {
+    if (!state.days || typeof state.days !== 'object') {
+        return;
+    }
+    const dates = Object.keys(state.days).sort().reverse();
+    for (const oldDate of dates.slice(maxDays)) {
+        if (!state.day || state.day.date !== oldDate) {
+            delete state.days[oldDate];
+        }
+    }
 }

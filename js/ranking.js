@@ -8,7 +8,7 @@ import {
     normalizeVector,
     vectorDimension,
 } from './vectors.js';
-import { getExcludedIdSet, pool, scheduleSave, state } from './state.js';
+import { getExcludedIdSet, pool, pruneDayStacks, scheduleSave, state } from './state.js';
 
 export function tokenizeText(text) {
     const rawTokens = text.toLowerCase().match(/[\p{L}\p{N}][\p{L}\p{N}\-]*/gu) || [];
@@ -311,6 +311,11 @@ export function buildDailyStack() {
         dw: {},
         extra: 0,
     };
+    if (!state.days || typeof state.days !== 'object') {
+        state.days = {};
+    }
+    state.days[pool.date] = state.day;
+    pruneDayStacks();
     scheduleSave();
 }
 

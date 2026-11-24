@@ -9,6 +9,7 @@ export const DEFAULT_STATE = {
     mem: {},
     lib: [],
     day: null,
+    days: {},
 };
 
 export const PHASES = ['Seen', 'Read', 'Opened', 'Saved'];

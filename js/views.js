@@ -18,6 +18,7 @@ import {
     truncateText,
 } from './utils.js';
 import {
+    archiveState,
     getCurrentPaper,
     getExcludedIdSet,
     getSavedIdSet,
@@ -54,6 +55,8 @@ export function renderApp(animationClass = 'in') {
     select('#date').textContent = pool.date
         ? formatIsoDate(pool.date, { weekday: 'short', day: 'numeric', month: 'short' })
         : '';
+    const isArchiveDay = Boolean(archiveState.todayDate && pool.date && pool.date !== archiveState.todayDate);
+    select('#archiveBtn')?.classList.toggle('active', isArchiveDay);
     renderLibraryBadge();
 
     if (pool.papers.length === 0) {

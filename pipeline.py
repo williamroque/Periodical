@@ -21,7 +21,7 @@ FEED = os.environ.get('ARXIV_FEED', 'astro-ph')
 MAX_POOL = int(os.environ.get('MAX_POOL', '200'))
 INCLUDE_TYPES = set(os.environ.get('ANNOUNCE_TYPES', 'new,cross').split(','))
 OUT_DIR = os.environ.get('OUT_DIR', 'data')
-KEEP_DAYS = int(os.environ.get('KEEP_DAYS', '3'))
+KEEP_DAYS = int(os.environ.get('KEEP_DAYS', '7'))
 FIG_MAX_PX = int(os.environ.get('FIG_MAX_PX', '1100'))
 FIG_WORKERS = int(os.environ.get('FIG_WORKERS', '4'))
 MAX_AUTHORS = 60
@@ -559,6 +559,41 @@ def prune_old_figures(current_day):
             shutil.rmtree(os.path.join(root, folder), ignore_errors=True)
 
 
+def update_archive(current_day, document):
+    archive_dir = os.path.join(OUT_DIR, 'archive')
+    os.makedirs(archive_dir, exist_ok=True)
+    archive_path = os.path.join(archive_dir, f'{current_day}.json')
+    temp_path = archive_path + '.tmp'
+    with open(temp_path, 'w', encoding='utf-8') as handle:
+        json.dump(document, handle, ensure_ascii=False, separators=(',', ':'))
+    os.replace(temp_path, archive_path)
+
+    cutoff_date = datetime.fromisoformat(current_day) - timedelta(days=KEEP_DAYS)
+    cutoff_str = cutoff_date.date().isoformat()
+    days = []
+    for filename in sorted(os.listdir(archive_dir), reverse=True):
+        match = re.match(r'^(\d{4}-\d{2}-\d{2})\.json$', filename)
+        if not match:
+            continue
+        file_day = match.group(1)
+        file_path = os.path.join(archive_dir, filename)
+        if file_day < cutoff_str:
+            os.remove(file_path)
+            continue
+        try:
+            with open(file_path, 'r', encoding='utf-8') as handle:
+                data = json.load(handle)
+            days.append({'date': file_day, 'count': data.get('count', len(data.get('papers', [])))})
+        except Exception:
+            continue
+
+    manifest_path = os.path.join(OUT_DIR, 'days.json')
+    manifest_tmp = manifest_path + '.tmp'
+    with open(manifest_tmp, 'w', encoding='utf-8') as handle:
+        json.dump({'today': current_day, 'days': days}, handle, ensure_ascii=False, separators=(',', ':'))
+    os.replace(manifest_tmp, manifest_path)
+
+
 def compute_embeddings(papers):
     from fastembed import TextEmbedding
 
@@ -765,6 +800,7 @@ def main():
         json.dump(document, handle, ensure_ascii=False, separators=(',', ':'))
     os.replace(temp_path, output_path)
 
+    update_archive(day, document)
     prune_old_figures(day)
     write_github_output('updated', 'true')
 

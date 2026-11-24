@@ -12,6 +12,7 @@ export const ICONS = {
     bookmark: buildIcon(`<path d='M7 3.5h10a1 1 0 0 1 1 1V20l-6-3.8L6 20V4.5a1 1 0 0 1 1-1z'/>`, 22),
     back: buildIcon(`<path d='M9 14L4 9l5-5'/><path d='M4 9h10.5a5.5 5.5 0 0 1 0 11H11'/>`, 19),
     library: buildIcon(`<path d='M4 19.5V5a2 2 0 0 1 2-2h12a1 1 0 0 1 1 1v13H6a2 2 0 0 0-2 2.5zM4 19.5A1.5 1.5 0 0 0 5.5 21H19v-4'/>`, 20),
+    clock: buildIcon(`<circle cx='12' cy='12' r='9'/><path d='M12 7v5l3 2'/>`, 20),
     sliders: buildIcon(`<path d='M4 7h10M18 7h2M4 17h4M12 17h8'/><circle cx='16' cy='7' r='2'/><circle cx='10' cy='17' r='2'/>`, 20),
     text: buildIcon(`<path d='M4 6h16M4 12h16M4 18h10'/>`, 18),
     pdf: buildIcon(`<path d='M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z'/><path d='M14 3v5h5'/>`, 18),

@@ -1,7 +1,9 @@
 import { ICONS } from './icons.js';
 import { select } from './utils.js';
 import {
+    activateDayStack,
     activeDwell,
+    archiveState,
     flushState,
     getCurrentPaper,
     ingestDailyFeed,
@@ -23,7 +25,7 @@ import {
     stepDeeper,
 } from './actions.js';
 import { renderApp, renderEmptyView, stageEl } from './views.js';
-import { initDialogs, openLibraryDialog, openSettingsDialog } from './dialogs.js';
+import { initDialogs, openArchiveDialog, openLibraryDialog, openSettingsDialog } from './dialogs.js';
 
 document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
@@ -60,11 +62,13 @@ document.querySelectorAll('dialog:not(#lightbox)').forEach((dlg) => {
     });
 });
 
+select('#archiveBtn').innerHTML = ICONS.clock;
 select('#setBtn').innerHTML = ICONS.sliders;
 select('#backBtn').innerHTML = ICONS.back;
 select('#skipBtn').innerHTML = ICONS.skip;
 select('#saveBtn').innerHTML = ICONS.bookmark;
 
+select('#archiveBtn').onclick = openArchiveDialog;
 select('#libBtn').onclick = openLibraryDialog;
 select('#setBtn').onclick = openSettingsDialog;
 select('#backBtn').onclick = goToPreviousPaper;
@@ -94,6 +98,11 @@ window.addEventListener('keydown', (event) => {
     if (key === ',') {
         event.preventDefault();
         openSettingsDialog();
+        return;
+    }
+    if (key === 'a' || key === 'A') {
+        event.preventDefault();
+        openArchiveDialog();
         return;
     }
     if (key === 'l' || key === 'L') {
@@ -154,11 +163,27 @@ async function initializeApp() {
     initDialogs();
     applyThemePreference(state.theme);
     try {
-        const response = await fetch('data/today.json', { cache: 'no-cache' });
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}`);
+        const [todayRes, daysRes] = await Promise.all([
+            fetch('data/today.json', { cache: 'no-cache' }),
+            fetch('data/days.json', { cache: 'no-cache' }).catch(() => null),
+        ]);
+        if (!todayRes.ok) {
+            throw new Error(`HTTP ${todayRes.status}`);
         }
-        ingestDailyFeed(await response.json());
+        ingestDailyFeed(await todayRes.json());
+        archiveState.todayDate = pool.date;
+
+        let manifestDays = [];
+        if (daysRes && daysRes.ok) {
+            const manifest = await daysRes.json();
+            if (manifest && Array.isArray(manifest.days)) {
+                manifestDays = manifest.days.slice(0, 8);
+            }
+        }
+        if (manifestDays.length === 0 && pool.date) {
+            manifestDays = [{ date: pool.date, count: pool.papers.length }];
+        }
+        archiveState.days = manifestDays;
     } catch (err) {
         console.warn('Could not load data/today.json', err);
         const protocolHint = location.protocol === 'file:'
@@ -169,10 +194,8 @@ async function initializeApp() {
     }
 
     if (state.onboarded && pool.papers.length > 0) {
-        if (!state.day || state.day.date !== pool.date) {
+        if (!activateDayStack(pool.date)) {
             buildDailyStack();
-        } else {
-            state.day.ids = state.day.ids.filter((id) => pool.byId.has(id));
         }
     }
     renderApp('in');
