@@ -24,6 +24,21 @@ export function openFigureLightbox(paper) {
 }
 
 let toastTimerId = 0;
+let toastHideTimerId = 0;
+
+function hideToast(toastEl) {
+    toastEl.classList.remove('on');
+    clearTimeout(toastHideTimerId);
+    toastHideTimerId = setTimeout(() => {
+        if (!toastEl.classList.contains('on') && toastEl.hidePopover && toastEl.matches(':popover-open')) {
+            try {
+                toastEl.hidePopover();
+            } catch {
+                // Ignore
+            }
+        }
+    }, 300);
+}
 
 export function showToast(message, actionLabel, actionCallback) {
     const toastEl = select('#toast');
@@ -33,13 +48,24 @@ export function showToast(message, actionLabel, actionCallback) {
 
     if (actionLabel) {
         select('button', toastEl).onclick = () => {
-            toastEl.classList.remove('on');
+            hideToast(toastEl);
             actionCallback();
         };
     }
+
+    clearTimeout(toastHideTimerId);
+    if (toastEl.showPopover) {
+        try {
+            if (toastEl.matches(':popover-open')) {
+                toastEl.hidePopover();
+            }
+            toastEl.showPopover();
+        } catch {
+            // Ignore if unsupported
+        }
+    }
+
     toastEl.classList.add('on');
     clearTimeout(toastTimerId);
-    toastTimerId = setTimeout(() => {
-        toastEl.classList.remove('on');
-    }, actionLabel ? 4800 : 2400);
+    toastTimerId = setTimeout(() => hideToast(toastEl), actionLabel ? 4800 : 2400);
 }
