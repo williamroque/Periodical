@@ -1,9 +1,70 @@
 export const DAY_MS = 86400000;
 export const STORAGE_KEY = 'periodical.v1';
+export const DEFAULT_RANKING = {
+    sortBy: 'weighted',
+    weights: {
+        relevance: 1.0,
+        categories: 1.0,
+        quality: 1.0,
+        hIndex: 0.0,
+        citations: 0.0,
+        publications: 0.0,
+        diversity: 1.0,
+    },
+};
+
+export const SORT_MODES = [
+    { id: 'weighted', label: 'Weighted blend' },
+    { id: 'relevance', label: 'Topic relevance' },
+    { id: 'h_index', label: 'Author H-index' },
+    { id: 'citations', label: 'Author citations' },
+    { id: 'publications', label: 'Author publications' },
+];
+
+export const RANKING_CRITERIA = [
+    { key: 'relevance', label: 'Topic & history match' },
+    { key: 'categories', label: 'Preferred areas' },
+    { key: 'quality', label: 'Code, venue & figure' },
+    { key: 'hIndex', label: 'Author H-index' },
+    { key: 'citations', label: 'Author citations' },
+    { key: 'publications', label: 'Author publications' },
+    { key: 'diversity', label: 'Diversity & detours' },
+];
+
+export const RANKING_PRESETS = [
+    {
+        id: 'balanced',
+        label: 'Balanced',
+        sortBy: 'weighted',
+        weights: { relevance: 1.0, categories: 1.0, quality: 1.0, hIndex: 0.0, citations: 0.0, publications: 0.0, diversity: 1.0 },
+    },
+    {
+        id: 'influential',
+        label: 'Influential authors',
+        sortBy: 'weighted',
+        weights: { relevance: 0.8, categories: 0.6, quality: 0.8, hIndex: 1.4, citations: 1.0, publications: 0.6, diversity: 0.8 },
+    },
+    {
+        id: 'focus',
+        label: 'Focus only',
+        sortBy: 'weighted',
+        weights: { relevance: 1.6, categories: 0.5, quality: 0.3, hIndex: 0.0, citations: 0.0, publications: 0.0, diversity: 0.4 },
+    },
+    {
+        id: 'open',
+        label: 'Open & reviewed',
+        sortBy: 'weighted',
+        weights: { relevance: 0.8, categories: 0.8, quality: 1.8, hIndex: 0.3, citations: 0.0, publications: 0.0, diversity: 0.8 },
+    },
+];
+
 export const DEFAULT_STATE = {
     prompt: '',
     cats: [],
+    sources: [],
+    keywords: [],
     quartiles: [],
+    ranking: structuredClone(DEFAULT_RANKING),
     limit: 10,
     theme: 'auto',
     onboarded: false,
@@ -98,6 +159,27 @@ export function getCategoryName(code) {
     }
     return code;
 }
+
+export const DATA_SOURCES = [
+    { id: 'JWST', label: 'JWST', re: /\b(?:JWST|James Webb)\b/ },
+    { id: 'HST', label: 'HST', re: /\b(?:HST|Hubble)\b/ },
+    { id: 'Euclid', label: 'Euclid', re: /\bEuclid\b/ },
+    { id: 'Roman', label: 'Roman', re: /\b(?:Roman|WFIRST)\b/ },
+    { id: 'Gaia', label: 'Gaia', re: /\bGaia\b/ },
+    { id: 'Rubin', label: 'Rubin / LSST', re: /\b(?:Rubin|LSST)\b/ },
+    { id: 'DESI', label: 'DESI', re: /\bDESI\b/ },
+    { id: 'SDSS', label: 'SDSS', re: /\bSDSS\b/ },
+    { id: 'ALMA', label: 'ALMA', re: /\bALMA\b/ },
+    { id: 'VLT', label: 'VLT', re: /\b(?:VLT|VLTI)\b/ },
+    { id: 'Keck', label: 'Keck', re: /\bKeck\b/ },
+    { id: 'TESS', label: 'TESS', re: /\bTESS\b/ },
+    { id: 'Kepler', label: 'Kepler', re: /\b(?:Kepler|K2)\b/ },
+    { id: 'Chandra', label: 'Chandra', re: /\bChandra\b/ },
+    { id: 'XMM-Newton', label: 'XMM-Newton', re: /\bXMM(?:-Newton)?\b/ },
+    { id: 'Fermi', label: 'Fermi', re: /\bFermi\b/ },
+    { id: 'Swift', label: 'Swift', re: /\bSwift\b/ },
+    { id: 'LIGO', label: 'LIGO / Virgo', re: /\b(?:LIGO|Virgo|KAGRA)\b/ },
+];
 
 export const QUARTILE_OPTIONS = ['Q1', 'Q2', 'Q3', 'Q4', 'Unlisted'];
 

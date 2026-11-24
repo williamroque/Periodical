@@ -68,6 +68,12 @@
                 <p class='hint'>Anchors the ranking each morning. What you read, open and save gradually takes over.</p>
             </div>
             <div class='section'>
+                <span class='label'>Telescopes &amp; data sources</span>
+                <div class='chips' id='setSources'></div>
+                <input type='text' id='setKeywords' placeholder='Additional abstract keywords (comma-separated, e.g. eROSITA, ZTF)' style='margin-top: 12px'>
+                <p class='hint'>Papers mentioning these in their abstract are boosted and highlighted.</p>
+            </div>
+            <div class='section'>
                 <span class='label'>Preferred areas</span>
                 <div class='chips' id='setCats'></div>
             </div>
@@ -75,6 +81,15 @@
                 <span class='label'>Journal ranking</span>
                 <div class='chips' id='setQuartiles'></div>
                 <p class='hint'>Filter by journal quartile (e.g. Q1 &amp; Q2). Leave all unselected to include everything.</p>
+            </div>
+            <div class='section'>
+                <div class='section-row' style='margin-bottom: 10px'>
+                    <label class='label' for='setSortBy' style='margin: 0'>Ranking &amp; sorting</label>
+                    <select id='setSortBy' class='sort-select'></select>
+                </div>
+                <div class='chips' id='setRankPresets'></div>
+                <div class='weight-list' id='setRankWeights'></div>
+                <p class='hint' id='setRankHint'>Assign weights to ranking criteria (0 = off), or choose a direct sort order above.</p>
             </div>
             <div class='section'>
                 <div class='section-row'>

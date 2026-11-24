@@ -139,6 +139,52 @@ input[type='range'] {
     font-variant-numeric: tabular-nums;
 }
 
+.sort-select {
+    height: 34px;
+    padding: 0 12px;
+    border-radius: 10px;
+    border: 1px solid var(--line-2);
+    background: var(--surface-2);
+    color: var(--ink);
+    font-size: 13px;
+    font-weight: 550;
+}
+
+.weight-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 14px;
+    transition: opacity 0.2s;
+}
+
+.weight-list.disabled {
+    opacity: 0.42;
+    pointer-events: none;
+}
+
+.weight-row {
+    display: grid;
+    grid-template-columns: 1fr 124px 42px;
+    align-items: center;
+    gap: 10px;
+    font-size: 13px;
+    color: var(--ink-2);
+}
+
+.weight-row input[type='range'] {
+    height: 22px;
+    margin: 0;
+}
+
+.weight-val {
+    text-align: right;
+    font-size: 12px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--muted);
+}
+
 .stat-line {
     font-size: 13px;
     color: var(--muted);

@@ -1,6 +1,6 @@
-import { DEFAULT_STATE, STORAGE_KEY } from './config.js';
+import { DEFAULT_STATE, RANKING_CRITERIA, RANKING_PRESETS, SORT_MODES, STORAGE_KEY } from './config.js';
 import { ICONS } from './icons.js';
-import { abbreviateAuthorName, clamp, escapeHtml, formatIsoDate, select } from './utils.js';
+import { abbreviateAuthorName, clamp, escapeHtml, formatIsoDate, parseKeywords, select } from './utils.js';
 import { decodedVectorCache } from './vectors.js';
 import {
     activateDayStack,
@@ -9,6 +9,7 @@ import {
     getCurrentPaper,
     getSavedIdSet,
     ingestDailyFeed,
+    normalizeRankingConfig,
     pool,
     replaceState,
     scheduleSave,
@@ -22,8 +23,10 @@ import { removeFromLibrary } from './actions.js';
 import {
     buildCategoryChipsHtml,
     buildQuartileChipsHtml,
+    buildSourceChipsHtml,
     collectSelectedCategories,
     collectSelectedQuartiles,
+    collectSelectedSources,
     handleChipClick,
     renderApp,
     updateDockButtons,
@@ -175,11 +178,59 @@ async function selectArchiveDate(date) {
     }
 }
 
+function formatWeightLabel(val) {
+    return val <= 0 ? 'Off' : `${val.toFixed(1)}×`;
+}
+
+function findMatchingPresetId(ranking) {
+    if (ranking.sortBy !== 'weighted') {
+        return '';
+    }
+    const match = RANKING_PRESETS.find((preset) => (
+        Object.keys(preset.weights).every(
+            (key) => Math.abs((ranking.weights[key] ?? 0) - preset.weights[key]) < 0.05
+        )
+    ));
+    return match ? match.id : '';
+}
+
+function renderRankingControls(ranking) {
+    const sortEl = select('#setSortBy');
+    sortEl.innerHTML = SORT_MODES.map(
+        (mode) => `<option value='${escapeHtml(mode.id)}'>${escapeHtml(mode.label)}</option>`
+    ).join('');
+    sortEl.value = ranking.sortBy;
+
+    const activePresetId = findMatchingPresetId(ranking);
+    select('#setRankPresets').innerHTML = RANKING_PRESETS.map((preset) => (
+        `<button type='button' class='chip' data-preset='${escapeHtml(preset.id)}' aria-pressed='${preset.id === activePresetId}'>` +
+        `${escapeHtml(preset.label)}` +
+        `</button>`
+    )).join('');
+
+    const weightsEl = select('#setRankWeights');
+    weightsEl.innerHTML = RANKING_CRITERIA.map((item) => {
+        const val = ranking.weights[item.key] ?? 0;
+        return (
+            `<label class='weight-row'>` +
+            `<span>${escapeHtml(item.label)}</span>` +
+            `<input type='range' min='0' max='2' step='0.1' data-weight='${escapeHtml(item.key)}' value='${val}'>` +
+            `<span class='weight-val'>${formatWeightLabel(val)}</span>` +
+            `</label>`
+        );
+    }).join('');
+    weightsEl.classList.toggle('disabled', ranking.sortBy !== 'weighted');
+}
+
 export function openSettingsDialog() {
-    settingsDraft = { theme: state.theme };
+    const ranking = normalizeRankingConfig(state.ranking);
+    settingsDraft = { theme: state.theme, ranking };
     select('#setPrompt').value = state.prompt;
+    select('#setSources').innerHTML = buildSourceChipsHtml(state.sources || []);
+    select('#setKeywords').value = (state.keywords || []).join(', ');
     select('#setCats').innerHTML = buildCategoryChipsHtml(state.cats);
     select('#setQuartiles').innerHTML = buildQuartileChipsHtml(state.quartiles || []);
+    renderRankingControls(ranking);
     select('#setLimit').value = state.limit;
     select('#setLimitVal').textContent = state.limit;
     updateThemeControlButtons(state.theme);
@@ -269,8 +320,48 @@ export function initDialogs() {
         showToast(`Copied ${entriesToCopy.length} — in Zotero: Import from Clipboard`);
     };
 
+    select('#setSources').addEventListener('click', handleChipClick);
     select('#setCats').addEventListener('click', handleChipClick);
     select('#setQuartiles').addEventListener('click', handleChipClick);
+
+    select('#setSortBy').addEventListener('change', (event) => {
+        if (!settingsDraft) {
+            return;
+        }
+        settingsDraft.ranking.sortBy = event.target.value;
+        renderRankingControls(settingsDraft.ranking);
+    });
+
+    select('#setRankPresets').addEventListener('click', (event) => {
+        const btn = event.target.closest('button[data-preset]');
+        if (!btn || !settingsDraft) {
+            return;
+        }
+        const preset = RANKING_PRESETS.find((item) => item.id === btn.dataset.preset);
+        if (!preset) {
+            return;
+        }
+        settingsDraft.ranking = {
+            sortBy: preset.sortBy,
+            weights: { ...preset.weights },
+        };
+        renderRankingControls(settingsDraft.ranking);
+    });
+
+    select('#setRankWeights').addEventListener('input', (event) => {
+        const input = event.target.closest('input[data-weight]');
+        if (!input || !settingsDraft) {
+            return;
+        }
+        const val = Number(input.value);
+        settingsDraft.ranking.weights[input.dataset.weight] = val;
+        input.nextElementSibling.textContent = formatWeightLabel(val);
+        const activePresetId = findMatchingPresetId(settingsDraft.ranking);
+        select('#setRankPresets').querySelectorAll('button[data-preset]').forEach((btn) => {
+            btn.setAttribute('aria-pressed', String(btn.dataset.preset === activePresetId));
+        });
+    });
+
     select('#setLimit').addEventListener('input', (event) => {
         select('#setLimitVal').textContent = event.target.value;
     });
@@ -290,19 +381,29 @@ export function initDialogs() {
             return;
         }
         const nextPrompt = select('#setPrompt').value.trim();
+        const nextSources = collectSelectedSources(select('#setSources'));
+        const nextKeywords = parseKeywords(select('#setKeywords').value);
         const nextCats = collectSelectedCategories(select('#setCats'));
         const nextQuartiles = collectSelectedQuartiles(select('#setQuartiles'));
+        const nextRanking = normalizeRankingConfig(settingsDraft.ranking);
+        const prevRanking = normalizeRankingConfig(state.ranking);
         const nextLimit = clamp(Number(select('#setLimit').value) || 10, 3, 30);
         const hasRankingChange = (
             nextPrompt !== state.prompt ||
             nextLimit !== state.limit ||
+            nextSources.join() !== (state.sources || []).join() ||
+            nextKeywords.join() !== (state.keywords || []).join() ||
             nextCats.join() !== state.cats.join() ||
-            nextQuartiles.join() !== (state.quartiles || []).join()
+            nextQuartiles.join() !== (state.quartiles || []).join() ||
+            JSON.stringify(nextRanking) !== JSON.stringify(prevRanking)
         );
 
         state.prompt = nextPrompt;
+        state.sources = nextSources;
+        state.keywords = nextKeywords;
         state.cats = nextCats;
         state.quartiles = nextQuartiles;
+        state.ranking = nextRanking;
         state.limit = nextLimit;
         state.theme = settingsDraft.theme;
         settingsDraft = null;

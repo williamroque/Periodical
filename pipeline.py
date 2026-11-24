@@ -24,6 +24,8 @@ OUT_DIR = os.environ.get('OUT_DIR', 'data')
 KEEP_DAYS = int(os.environ.get('KEEP_DAYS', '7'))
 FIG_MAX_PX = int(os.environ.get('FIG_MAX_PX', '1100'))
 FIG_WORKERS = int(os.environ.get('FIG_WORKERS', '4'))
+AUTHOR_METRICS = os.environ.get('AUTHOR_METRICS', '1') != '0'
+AUTHOR_WORKERS = int(os.environ.get('AUTHOR_WORKERS', '4'))
 MAX_AUTHORS = 60
 
 LLM_KEY = os.environ.get('LLM_API_KEY') or os.environ.get('GITHUB_TOKEN')
@@ -818,6 +820,80 @@ def load_previous_feed(path):
         return {}
 
 
+COLLAB_NAME_RE = re.compile(r'collaboration|team|consortium|survey|group|project', re.I)
+
+
+def lookup_openalex_author(name):
+    try:
+        response = requests.get(
+            'https://api.openalex.org/authors',
+            params={
+                'search': name,
+                'per-page': 3,
+                'select': 'display_name,works_count,cited_by_count,summary_stats',
+            },
+            headers={'User-Agent': USER_AGENT},
+            timeout=10,
+        )
+        if response.status_code != 200:
+            return None
+        results = response.json().get('results') or []
+        if not results:
+            return None
+        top = results[0]
+        h_index = int((top.get('summary_stats') or {}).get('h_index') or 0)
+        works = int(top.get('works_count') or 0)
+        cites = int(top.get('cited_by_count') or 0)
+        return {'h': h_index, 'pubs': works, 'cites': cites}
+    except Exception:
+        return None
+
+
+def fetch_author_metrics(items, previous_papers):
+    if not AUTHOR_METRICS:
+        return
+
+    needed_names = set()
+    paper_targets = {}
+    for paper in items:
+        prev = previous_papers.get(paper['id'])
+        if prev and isinstance(prev.get('auth_metrics'), dict):
+            paper['auth_metrics'] = prev['auth_metrics']
+            continue
+        authors = [a for a in paper.get('authors', []) if a and not COLLAB_NAME_RE.search(a)]
+        if not authors:
+            continue
+        targets = [authors[0]]
+        if len(authors) > 1 and authors[-1] != authors[0]:
+            targets.append(authors[-1])
+        paper_targets[paper['id']] = targets
+        needed_names.update(targets)
+
+    if not needed_names:
+        return
+
+    names_list = sorted(needed_names)
+    with ThreadPoolExecutor(max_workers=AUTHOR_WORKERS) as executor:
+        results = list(executor.map(lookup_openalex_author, names_list))
+    author_cache = dict(zip(names_list, results))
+
+    populated = 0
+    for paper in items:
+        targets = paper_targets.get(paper['id'])
+        if not targets:
+            continue
+        stats = [author_cache.get(name) for name in targets if author_cache.get(name)]
+        if not stats:
+            continue
+        paper['auth_metrics'] = {
+            'h': max(s['h'] for s in stats),
+            'pubs': max(s['pubs'] for s in stats),
+            'cites': max(s['cites'] for s in stats),
+        }
+        populated += 1
+    log(f'Fetched author metrics for {populated}/{len(items)} papers')
+
+
 def write_github_output(key, value):
     output_file = os.environ.get('GITHUB_OUTPUT')
     if output_file:
@@ -854,6 +930,11 @@ def main():
         has_venue = bool(paper['journal'] or ACCEPTED_RE.search(paper['comment']))
         paper['accepted'] = has_venue
 
+    previous_papers = load_previous_feed(output_path)
+
+    log('Fetching author metrics…')
+    fetch_author_metrics(items, previous_papers)
+
     log('Fetching figures from arXiv HTML…')
     fetch_all_figures(items, day)
 
@@ -861,11 +942,11 @@ def main():
     compute_embeddings(items)
 
     log('Summarizing…')
-    generate_summaries(items, load_previous_feed(output_path))
+    generate_summaries(items, previous_papers)
 
     exported_keys = [
         'id', 'v', 'type', 'title', 'micro', 'micro_src', 'abstract',
-        'authors', 'n_authors', 'cats', 'comment', 'journal', 'venue', 'doi',
+        'authors', 'n_authors', 'auth_metrics', 'cats', 'comment', 'journal', 'venue', 'doi',
         'accepted', 'code', 'html', 'fig', 'fig_w', 'fig_h', 'caption', 'vec',
     ]
     papers = [

@@ -1,5 +1,5 @@
 import { DAY_MS, STOP_WORDS, getCategoryName } from './config.js';
-import { createSeededRandom, getPaperQuartile, hashString, truncateText } from './utils.js';
+import { createSeededRandom, findMatchedKeywords, getPaperQuartile, hashString, truncateText } from './utils.js';
 import {
     addScaledVector,
     computeZScores,
@@ -8,7 +8,7 @@ import {
     normalizeVector,
     vectorDimension,
 } from './vectors.js';
-import { getExcludedIdSet, pool, pruneDayStacks, scheduleSave, state } from './state.js';
+import { getExcludedIdSet, normalizeRankingConfig, pool, pruneDayStacks, scheduleSave, state } from './state.js';
 
 export function tokenizeText(text) {
     const rawTokens = text.toLowerCase().match(/[\p{L}\p{N}][\p{L}\p{N}\-]*/gu) || [];
@@ -182,20 +182,36 @@ export function rankCandidatePool(targetCount, excludedIds, seedSalt = '') {
         }
 
         const affinity = positive.length >= 2 ? 0.6 * profileSim + 0.4 * maxPosSim : profileSim;
+        const auth = paper.authMetrics;
+        const hRaw = auth ? auth.h : 0;
+        const citesRaw = auth ? auth.cites : 0;
+        const pubsRaw = auth ? auth.pubs : 0;
         return {
             paper,
             affinity,
             maxPosSim,
             nearestPos,
             maxNegSim,
+            hRaw,
+            citesRaw,
+            pubsRaw,
+            hLog: Math.log1p(hRaw),
+            citesLog: Math.log1p(citesRaw),
+            pubsLog: Math.log1p(pubsRaw),
             jitter: random(),
         };
     });
 
     computeZScores(rows, 'affinity', 'zAffinity');
     computeZScores(rows, 'maxNegSim', 'zNegative');
+    computeZScores(rows, 'hLog', 'zHIndex');
+    computeZScores(rows, 'citesLog', 'zCitations');
+    computeZScores(rows, 'pubsLog', 'zPublications');
 
+    const ranking = normalizeRankingConfig(state.ranking);
+    const weights = ranking.weights;
     const negPenaltyWeight = 0.7 * Math.min(1, negative.length / 6);
+
     for (const row of rows) {
         const p = row.paper;
         const codeBoost = p.code ? 0.32 : 0;
@@ -217,15 +233,56 @@ export function rankCandidatePool(targetCount, excludedIds, seedSalt = '') {
 
         const baseRelevance = profileVec ? row.zAffinity : 0;
         const negativeDamping = negPenaltyWeight * Math.max(0, row.zNegative);
-        const noise = (row.jitter - 0.5) * 0.14;
+        const relevanceScore = weights.relevance * (baseRelevance - negativeDamping);
+        const authorScore = (
+            weights.hIndex * row.zHIndex +
+            weights.citations * row.zCitations +
+            weights.publications * row.zPublications
+        );
+        row.authorScore = authorScore;
 
-        row.score = baseRelevance - negativeDamping + row.quality + categoryBoost + noise;
+        const noise = (row.jitter - 0.5) * 0.14;
+        const matched = findMatchedKeywords(p, state.sources, state.keywords);
+        row.matchedKeywords = matched.labels;
+        const keywordBoost = matched.labels.length > 0
+            ? 0.65 + 0.15 * Math.min(2, matched.labels.length - 1)
+            : 0;
+
+        row.score = (
+            relevanceScore +
+            weights.categories * categoryBoost +
+            weights.quality * row.quality +
+            authorScore +
+            keywordBoost +
+            noise
+        );
         row.redundancy = -1;
     }
 
-    const isPersonalized = Boolean(profileVec || negative.length > 0);
-    const exploreSlots = isPersonalized && targetCount >= 4
-        ? Math.max(1, Math.round(targetCount * 0.15))
+    if (ranking.sortBy !== 'weighted') {
+        const directMetric = {
+            relevance: (row) => (profileVec ? row.affinity : 0),
+            h_index: (row) => row.hRaw,
+            citations: (row) => row.citesRaw,
+            publications: (row) => row.pubsRaw,
+        }[ranking.sortBy];
+
+        const sorted = rows.slice().sort((a, b) => {
+            const diff = directMetric(b) - directMetric(a);
+            return diff !== 0 ? diff : b.jitter - a.jitter;
+        }).slice(0, targetCount);
+
+        return sorted.map((row) => ({
+            id: row.paper.id,
+            why: explainSelection(row, queryVec, preferredCats, ranking),
+        }));
+    }
+
+    const hasKeywordPrefs = (state.sources && state.sources.length > 0) || (state.keywords && state.keywords.length > 0);
+    const isPersonalized = Boolean(profileVec || negative.length > 0 || hasKeywordPrefs);
+    const diversityWeight = weights.diversity;
+    const exploreSlots = isPersonalized && diversityWeight > 0 && targetCount >= 4
+        ? Math.max(1, Math.round(targetCount * 0.15 * Math.min(1.5, diversityWeight)))
         : 0;
 
     const selected = [];
@@ -253,7 +310,7 @@ export function rankCandidatePool(targetCount, excludedIds, seedSalt = '') {
     while (selected.length < targetCount - exploreSlots && remaining.length > 0) {
         const picked = pickBestCandidate((row) => {
             const clusterOverflow = Math.max(0, row.redundancy - tau) / (1 - tau);
-            return row.score - 1.7 * clusterOverflow;
+            return row.score - 1.7 * diversityWeight * clusterOverflow;
         });
         selected.push(picked);
     }
@@ -277,16 +334,31 @@ export function rankCandidatePool(targetCount, excludedIds, seedSalt = '') {
 
     return selected.map((row) => ({
         id: row.paper.id,
-        why: explainSelection(row, queryVec, preferredCats),
+        why: explainSelection(row, queryVec, preferredCats, ranking),
     }));
 }
 
-export function explainSelection(row, queryVec, preferredCats) {
+export function explainSelection(row, queryVec, preferredCats, ranking = { sortBy: 'weighted' }) {
     if (row.isExplore) {
         return { kind: 'explore', text: 'Outside your usual — a deliberate detour' };
     }
+    if (ranking.sortBy === 'h_index' && row.hRaw > 0) {
+        return { kind: 'author', text: `Author H-index ${row.hRaw}` };
+    }
+    if (ranking.sortBy === 'citations' && row.citesRaw > 0) {
+        return { kind: 'author', text: `${row.citesRaw.toLocaleString()} author citations` };
+    }
+    if (ranking.sortBy === 'publications' && row.pubsRaw > 0) {
+        return { kind: 'author', text: `${row.pubsRaw.toLocaleString()} author publications` };
+    }
+    if (row.authorScore > 0.9 && row.hRaw > 0) {
+        return { kind: 'author', text: `Influential authors (h-index ${row.hRaw})` };
+    }
     if (row.nearestPos && row.nearestPos.title && row.maxPosSim > pool.tau + 0.02) {
         return { kind: 'like', text: `Close to “${truncateText(row.nearestPos.title, 54)}”` };
+    }
+    if (row.matchedKeywords && row.matchedKeywords.length > 0) {
+        return { kind: 'keyword', text: `Mentions ${row.matchedKeywords.slice(0, 3).join(', ')}` };
     }
     if (queryVec && row.zAffinity > 0.9) {
         return { kind: 'focus', text: 'Matches your research focus' };

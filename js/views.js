@@ -1,4 +1,5 @@
 import {
+    DATA_SOURCES,
     DAY_MS,
     PHASES,
     QUARTILE_OPTIONS,
@@ -10,6 +11,7 @@ import { ICONS } from './icons.js';
 import {
     buildConstellationSvg,
     escapeHtml,
+    findMatchedKeywords,
     formatAuthorLine,
     formatIsoDate,
     getArxivAbsUrl,
@@ -17,6 +19,8 @@ import {
     getPaperQuartile,
     getPaperVenue,
     hashString,
+    highlightAbstract,
+    parseKeywords,
     select,
     truncateText,
 } from './utils.js';
@@ -120,6 +124,19 @@ export function renderPaperCard(paper, animationClass) {
     const extraAuthors = paper.nAuthors - paper.authors.length;
     const authorSuffix = extraAuthors > 0 ? ` and ${extraAuthors} more` : '';
     facts.push(['Authors', `<dd>${escapeHtml(paper.authors.join(', '))}${authorSuffix}</dd>`]);
+    if (paper.authMetrics && (paper.authMetrics.h || paper.authMetrics.pubs || paper.authMetrics.cites)) {
+        const parts = [];
+        if (paper.authMetrics.h) {
+            parts.push(`h-index ${paper.authMetrics.h}`);
+        }
+        if (paper.authMetrics.pubs) {
+            parts.push(`${paper.authMetrics.pubs.toLocaleString()} papers`);
+        }
+        if (paper.authMetrics.cites) {
+            parts.push(`${paper.authMetrics.cites.toLocaleString()} citations`);
+        }
+        facts.push(['Author record', `<dd>${escapeHtml(parts.join(' · '))}</dd>`]);
+    }
     if (paper.comment) {
         facts.push(['Comments', `<dd>${escapeHtml(paper.comment)}</dd>`]);
     }
@@ -152,6 +169,10 @@ export function renderPaperCard(paper, animationClass) {
     }
 
     const badges = [];
+    const matched = findMatchedKeywords(paper, state.sources, state.keywords);
+    for (const label of matched.labels) {
+        badges.push(`<span class='tag match'>${escapeHtml(label)}</span>`);
+    }
     if (paper.code) {
         badges.push(`<span class='tag code'>${ICONS.code} Code</span>`);
     }
@@ -218,7 +239,7 @@ export function renderPaperCard(paper, animationClass) {
                         </div>
                         <section class='deep' aria-label='Details'>
                             <div>
-                                <p class='abstract'>${escapeHtml(paper.abstract)}</p>
+                                <p class='abstract'>${highlightAbstract(paper.abstract, matched.patterns)}</p>
                                 <dl class='facts'>
                                     ${facts.map(([label, dd]) => `<dt>${label}</dt>${dd}`).join('')}
                                 </dl>
@@ -340,9 +361,35 @@ export function handleChipClick(event) {
     chip.setAttribute('aria-pressed', String(!currentPressed));
 }
 
+export function buildSourceChipsHtml(selectedSources) {
+    const counts = new Map(DATA_SOURCES.map((source) => [source.id, 0]));
+    for (const paper of pool.papers) {
+        const text = `${paper.title || ''}\n${paper.abstract || ''}`;
+        for (const source of DATA_SOURCES) {
+            if (source.re.test(text)) {
+                counts.set(source.id, counts.get(source.id) + 1);
+            }
+        }
+    }
+    return DATA_SOURCES.map((source) => {
+        const isPressed = (selectedSources || []).includes(source.id);
+        const count = counts.get(source.id) || 0;
+        return (
+            `<button class='chip' data-source='${escapeHtml(source.id)}' aria-pressed='${isPressed}'>` +
+            `${escapeHtml(source.label)}<span class='n'>${count}</span>` +
+            `</button>`
+        );
+    }).join('');
+}
+
 export function collectSelectedCategories(container) {
     const buttons = container.querySelectorAll('.chip[aria-pressed=true]');
     return [...buttons].map((btn) => btn.dataset.cat);
+}
+
+export function collectSelectedSources(container) {
+    const buttons = container.querySelectorAll('.chip[aria-pressed=true]');
+    return [...buttons].map((btn) => btn.dataset.source);
 }
 
 export function collectSelectedQuartiles(container) {
@@ -370,6 +417,11 @@ export function renderOnboardingView() {
                 <textarea id='obPrompt' rows='3' placeholder='A sentence or a few keywords — the more specific, the better'>${escapeHtml(state.prompt)}</textarea>
             </div>
             <div class='field'>
+                <span class='label'>Telescopes &amp; data sources <span style='color:var(--muted);font-weight:400'>· optional</span></span>
+                <div class='chips' id='obSources'>${buildSourceChipsHtml(state.sources)}</div>
+                <input type='text' id='obKeywords' placeholder='Additional abstract keywords (comma-separated, e.g. eROSITA, ZTF)' value='${escapeHtml((state.keywords || []).join(', '))}' style='margin-top: 12px'>
+            </div>
+            <div class='field'>
                 <span class='label'>Areas you follow <span style='color:var(--muted);font-weight:400'>· optional</span></span>
                 <div class='chips' id='obCats'>${buildCategoryChipsHtml(state.cats)}</div>
             </div>
@@ -380,10 +432,13 @@ export function renderOnboardingView() {
             <p class='fineprint'>${ICONS.lock} No account, no tracking, no server. Stored in your browser.</p>
         </section>`;
 
+    select('#obSources').addEventListener('click', handleChipClick);
     select('#obCats').addEventListener('click', handleChipClick);
 
     function startSession(usePromptText) {
         state.prompt = usePromptText ? select('#obPrompt').value.trim() : '';
+        state.sources = usePromptText ? collectSelectedSources(select('#obSources')) : [];
+        state.keywords = usePromptText ? parseKeywords(select('#obKeywords').value) : [];
         state.cats = collectSelectedCategories(select('#obCats'));
         state.onboarded = true;
         buildDailyStack();

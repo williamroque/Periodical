@@ -1,4 +1,4 @@
-import { COLLABORATION_RE, JOURNAL_QUARTILES, NAME_PARTICLES, NAME_SUFFIXES } from './config.js';
+import { COLLABORATION_RE, DATA_SOURCES, JOURNAL_QUARTILES, NAME_PARTICLES, NAME_SUFFIXES } from './config.js';
 
 export function select(selector, root = document) {
     return root.querySelector(selector);
@@ -222,4 +222,103 @@ export function getPaperQuartile(paper) {
         return 'Unlisted';
     }
     return JOURNAL_QUARTILES[venue] || 'Q4';
+}
+
+export function parseKeywords(rawText) {
+    const seen = new Set();
+    const result = [];
+    for (const part of String(rawText || '').split(',')) {
+        const trimmed = part.trim();
+        if (!trimmed) {
+            continue;
+        }
+        const key = trimmed.toLowerCase();
+        if (!seen.has(key)) {
+            seen.add(key);
+            result.push(trimmed);
+        }
+    }
+    return result;
+}
+
+export function buildKeywordRegex(keyword) {
+    const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const prefix = /^\w/.test(keyword) ? '\\b' : '';
+    const suffix = /\w$/.test(keyword) ? '\\b' : '';
+    return new RegExp(`${prefix}${escaped}${suffix}`, 'i');
+}
+
+const DATA_SOURCE_BY_ID = new Map(DATA_SOURCES.map((source) => [source.id, source]));
+
+export function findMatchedKeywords(paper, selectedSources = [], customKeywords = []) {
+    const text = `${paper.title || ''}\n${paper.abstract || ''}`;
+    const labels = [];
+    const patterns = [];
+
+    for (const id of selectedSources || []) {
+        const source = DATA_SOURCE_BY_ID.get(id);
+        if (source && source.re.test(text)) {
+            labels.push(source.label);
+            patterns.push(source.re);
+        }
+    }
+
+    for (const kw of customKeywords || []) {
+        if (!kw) {
+            continue;
+        }
+        const re = buildKeywordRegex(kw);
+        if (re.test(text)) {
+            labels.push(kw);
+            patterns.push(re);
+        }
+    }
+
+    return { labels, patterns };
+}
+
+export function highlightAbstract(abstractText, patterns) {
+    if (!abstractText || !patterns || patterns.length === 0) {
+        return escapeHtml(abstractText);
+    }
+    const ranges = [];
+    for (const pat of patterns) {
+        const flags = pat.flags.includes('g') ? pat.flags : `${pat.flags}g`;
+        const globalRe = new RegExp(pat.source, flags);
+        let match;
+        while ((match = globalRe.exec(abstractText)) !== null) {
+            if (match[0].length === 0) {
+                break;
+            }
+            ranges.push([match.index, match.index + match[0].length]);
+        }
+    }
+    if (ranges.length === 0) {
+        return escapeHtml(abstractText);
+    }
+    ranges.sort((a, b) => a[0] - b[0] || b[1] - a[1]);
+    const merged = [ranges[0]];
+    for (let i = 1; i < ranges.length; i++) {
+        const prev = merged[merged.length - 1];
+        const curr = ranges[i];
+        if (curr[0] <= prev[1]) {
+            prev[1] = Math.max(prev[1], curr[1]);
+        } else {
+            merged.push(curr);
+        }
+    }
+
+    let html = '';
+    let cursor = 0;
+    for (const [start, end] of merged) {
+        if (start > cursor) {
+            html += escapeHtml(abstractText.slice(cursor, start));
+        }
+        html += `<mark class='kw-hit'>${escapeHtml(abstractText.slice(start, end))}</mark>`;
+        cursor = end;
+    }
+    if (cursor < abstractText.length) {
+        html += escapeHtml(abstractText.slice(cursor));
+    }
+    return html;
 }

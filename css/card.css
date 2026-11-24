@@ -298,6 +298,20 @@
     border-color: color-mix(in srgb, var(--accent) 35%, transparent);
 }
 
+.tag.match {
+    color: var(--accent);
+    background: var(--accent-soft);
+    border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+.kw-hit {
+    background: var(--accent-soft);
+    color: inherit;
+    padding: 0 3px;
+    border-radius: 4px;
+    font-weight: 500;
+}
+
 .micro {
     margin: 0 0 14px;
     font-family: var(--serif);

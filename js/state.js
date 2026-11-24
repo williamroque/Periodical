@@ -1,13 +1,34 @@
-import { DEFAULT_STATE, STORAGE_KEY } from './config.js';
+import { DEFAULT_RANKING, DEFAULT_STATE, STORAGE_KEY } from './config.js';
 import { clamp, truncateText } from './utils.js';
 import { decodeVector, dotProduct, encodeVector, setVectorDimension } from './vectors.js';
 import { showToast } from './ui.js';
+
+export function normalizeRankingConfig(raw) {
+    const base = structuredClone(DEFAULT_RANKING);
+    if (!raw || typeof raw !== 'object') {
+        return base;
+    }
+    const validModes = new Set(['weighted', 'relevance', 'h_index', 'citations', 'publications']);
+    if (validModes.has(raw.sortBy)) {
+        base.sortBy = raw.sortBy;
+    }
+    if (raw.weights && typeof raw.weights === 'object') {
+        for (const key of Object.keys(base.weights)) {
+            const val = Number(raw.weights[key]);
+            if (Number.isFinite(val)) {
+                base.weights[key] = clamp(Math.round(val * 10) / 10, 0, 2);
+            }
+        }
+    }
+    return base;
+}
 
 export function loadUserState() {
     try {
         const savedJson = localStorage.getItem(STORAGE_KEY) || localStorage.getItem('triage.v4');
         if (savedJson) {
             const loaded = { ...structuredClone(DEFAULT_STATE), ...JSON.parse(savedJson) };
+            loaded.ranking = normalizeRankingConfig(loaded.ranking);
             loaded.days = loaded.days && typeof loaded.days === 'object' ? loaded.days : {};
             if (loaded.day && loaded.day.date && !loaded.days[loaded.day.date]) {
                 loaded.days[loaded.day.date] = loaded.day;
@@ -99,6 +120,13 @@ export function ingestDailyFeed(rawJson) {
             abstract: item.abstract || '',
             authors,
             nAuthors: item.n_authors || authors.length,
+            authMetrics: item.auth_metrics && typeof item.auth_metrics === 'object'
+                ? {
+                    h: Number(item.auth_metrics.h) || 0,
+                    pubs: Number(item.auth_metrics.pubs) || 0,
+                    cites: Number(item.auth_metrics.cites) || 0,
+                }
+                : null,
             cats: item.cats || item.categories || [],
             comment: item.comment || '',
             journal: item.journal || '',
