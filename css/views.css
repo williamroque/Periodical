@@ -113,7 +113,9 @@
 
 textarea,
 input[type='search'],
-input[type='text'] {
+input[type='text'],
+input[type='password'],
+input[type='url'] {
     width: 100%;
     font: 400 16px/1.5 var(--sans);
     color: var(--ink);
@@ -123,6 +125,8 @@ input[type='text'] {
     padding: 14px 16px;
     outline: none;
     resize: none;
+    appearance: none;
+    -webkit-appearance: none;
     transition: border-color 0.2s, box-shadow 0.2s;
 }
 

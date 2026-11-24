@@ -51,6 +51,12 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    cursor: pointer;
+    transition: color 0.18s;
+}
+
+.brand-date:hover {
+    color: var(--ink);
 }
 
 .brand-date::before {

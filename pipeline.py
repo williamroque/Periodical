@@ -21,7 +21,7 @@ FEED = os.environ.get('ARXIV_FEED', 'astro-ph')
 MAX_POOL = int(os.environ.get('MAX_POOL', '200'))
 INCLUDE_TYPES = set(os.environ.get('ANNOUNCE_TYPES', 'new,cross').split(','))
 OUT_DIR = os.environ.get('OUT_DIR', 'data')
-KEEP_DAYS = int(os.environ.get('KEEP_DAYS', '7'))
+KEEP_DAYS = int(os.environ.get('KEEP_DAYS', '14'))
 FIG_MAX_PX = int(os.environ.get('FIG_MAX_PX', '1100'))
 FIG_WORKERS = int(os.environ.get('FIG_WORKERS', '4'))
 AUTHOR_METRICS = os.environ.get('AUTHOR_METRICS', '1') != '0'

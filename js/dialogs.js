@@ -1,4 +1,4 @@
-import { DEFAULT_STATE, RANKING_CRITERIA, RANKING_PRESETS, SORT_MODES, STORAGE_KEY } from './config.js';
+import { DAY_OFFSET_OPTIONS, DEFAULT_SCIX_PROXY, DEFAULT_STATE, RANKING_CRITERIA, RANKING_PRESETS, SORT_MODES, STORAGE_KEY } from './config.js';
 import { ICONS } from './icons.js';
 import { abbreviateAuthorName, clamp, escapeHtml, formatIsoDate, parseKeywords, select } from './utils.js';
 import { decodedVectorCache } from './vectors.js';
@@ -21,6 +21,18 @@ import { copyTextToClipboard, downloadOrShareFile, formatBibtex } from './bibtex
 import { applyThemePreference, showToast } from './ui.js';
 import { removeFromLibrary } from './actions.js';
 import {
+    commitAllReadyQueueItems,
+    commitQueueItem,
+    createSciXLibrary,
+    fetchSciXLibraries,
+    getSciXAbsUrl,
+    hasSciXToken,
+    normalizeArxivId,
+    refreshSciXQueue,
+    removeFromSciXQueue,
+    sendPaperToSciX,
+} from './scix.js';
+import {
     buildCategoryChipsHtml,
     buildQuartileChipsHtml,
     buildSourceChipsHtml,
@@ -35,15 +47,39 @@ import {
 const libraryDialog = select('#library');
 const settingsDialog = select('#settings');
 const archiveDialog = select('#archive');
+const scixPickerDialog = select('#scixPicker');
 let settingsDraft = null;
 let isSwitchingArchiveDay = false;
+let activeLibraryTab = 'saved';
+let activeSciXPaper = null;
+
+function getLibraryNamesById(libIds) {
+    const byId = new Map((state.scix?.libraries || []).map((lib) => [lib.id, lib.name]));
+    return (libIds || []).map((id) => byId.get(id) || id);
+}
 
 export function renderLibraryBadge() {
     const unexportedCount = state.lib.filter((entry) => !entry.exported).length;
-    const badgeHtml = unexportedCount > 0 ? `<span class='badge'>${unexportedCount}</span>` : '';
+    const readySciXCount = (state.scix?.queue || []).filter((item) => item.status === 'ready').length;
+    const totalQueueCount = (state.scix?.queue || []).length;
+    const badgeCount = unexportedCount + readySciXCount;
+    const badgeHtml = badgeCount > 0 ? `<span class='badge'>${badgeCount}</span>` : '';
     select('#libBtn').innerHTML = ICONS.library + badgeHtml;
-    const statusText = unexportedCount > 0 ? ` · ${unexportedCount} not yet exported` : '';
+
+    const parts = [];
+    if (unexportedCount > 0) {
+        parts.push(`${unexportedCount} not yet exported`);
+    }
+    if (readySciXCount > 0) {
+        parts.push(`${readySciXCount} ready for SciX`);
+    }
+    const statusText = parts.length > 0 ? ` · ${parts.join(', ')}` : '';
     select('#libBtn').title = `Library${statusText} (L)`;
+
+    const tabCountEl = select('#scixQueueTabCount');
+    if (tabCountEl) {
+        tabCountEl.textContent = totalQueueCount > 0 ? `(${totalQueueCount})` : '';
+    }
 }
 
 export function renderLibraryList() {
@@ -82,13 +118,24 @@ export function renderLibraryList() {
         const leadAuthors = entry.authors.slice(0, 2).map(abbreviateAuthorName).join(', ');
         const etAl = entry.nAuthors > 2 ? ' et al.' : '';
         const dateLabel = formatIsoDate(entry.date, { day: 'numeric', month: 'short' });
+        const cleanId = normalizeArxivId(entry.id);
+        const addedEntry = state.scix?.added?.[cleanId];
+        const queuedEntry = (state.scix?.queue || []).find((item) => item.id === cleanId);
+        const scixBtnLabel = addedEntry ? 'In SciX ✓' : (queuedEntry ? 'Queued' : '+ SciX');
+        const libNamesLine = addedEntry && addedEntry.libIds?.length
+            ? `<div class='lib-item-libs'>SciX: ${escapeHtml(getLibraryNamesById(addedEntry.libIds).join(', '))}</div>`
+            : '';
+
         return `
             <div class='lib-item${newClass}' data-id='${escapeHtml(entry.id)}'>
                 <h4>${escapeHtml(entry.title)}</h4>
                 <p>${escapeHtml(leadAuthors + etAl)} · <span class='arxiv-id'>${escapeHtml(entry.id)}</span> · ${escapeHtml(dateLabel)}</p>
+                ${libNamesLine}
                 <div class='lib-actions'>
                     <a href='https://arxiv.org/pdf/${escapeHtml(entry.id)}' target='_blank' rel='noopener'>PDF</a>
                     <a href='https://arxiv.org/abs/${escapeHtml(entry.id)}' target='_blank' rel='noopener'>arXiv</a>
+                    <a href='${getSciXAbsUrl(entry.id)}' target='_blank' rel='noopener'>SciX</a>
+                    <button data-act='scix'>${scixBtnLabel}</button>
                     <button data-act='copy'>Copy BibTeX</button>
                     <button data-act='remove' class='danger'>Remove</button>
                 </div>
@@ -96,9 +143,161 @@ export function renderLibraryList() {
     }).join('');
 }
 
-export function openLibraryDialog() {
-    renderLibraryList();
+export function renderSciXQueueList() {
+    const queue = state.scix?.queue || [];
+    const readyItems = queue.filter((item) => item.status === 'ready');
+    const addAllBtn = select('#scixAddAllBtn');
+    const checkBtn = select('#scixCheckBtn');
+    select('#scixQueueTools').hidden = queue.length === 0;
+    addAllBtn.disabled = readyItems.length === 0;
+    addAllBtn.textContent = readyItems.length > 0 ? `Add all ready (${readyItems.length})` : 'Add all ready';
+    checkBtn.disabled = !hasSciXToken() || queue.length === 0;
+
+    if (queue.length === 0) {
+        select('#scixQueueList').innerHTML = (
+            `<div class='empty'>` +
+            `<b>No papers waiting</b>` +
+            `When you send a brand-new preprint to SciX before it’s indexed, it waits here until ready.` +
+            `</div>`
+        );
+        return;
+    }
+
+    const sorted = [...queue].sort((a, b) => {
+        if (a.status === 'ready' && b.status !== 'ready') {
+            return -1;
+        }
+        if (b.status === 'ready' && a.status !== 'ready') {
+            return 1;
+        }
+        return (b.addedAt || 0) - (a.addedAt || 0);
+    });
+
+    select('#scixQueueList').innerHTML = sorted.map((item) => {
+        const isReady = item.status === 'ready';
+        const pillClass = isReady ? 'ready' : 'pending';
+        const pillText = isReady ? 'Ready in SciX' : 'Waiting for SciX';
+        const leadAuthors = (item.authors || []).slice(0, 2).map(abbreviateAuthorName).join(', ');
+        const etAl = (item.nAuthors || 0) > 2 ? ' et al.' : '';
+        const targetNames = getLibraryNamesById(item.targetLibIds).join(', ') || 'No library selected';
+        const primaryAction = isReady
+            ? `<button data-qact='commit'>Add to SciX</button>`
+            : `<button data-qact='check'>Check now</button>`;
+
+        return `
+            <div class='lib-item${isReady ? ' new' : ''}' data-qid='${escapeHtml(item.id)}'>
+                <h4>${escapeHtml(item.title || item.id)}<span class='scix-pill ${pillClass}'>${pillText}</span></h4>
+                <p>${escapeHtml(leadAuthors + etAl)} · <span class='arxiv-id'>${escapeHtml(item.id)}</span></p>
+                <div class='lib-item-libs'>Libraries: ${escapeHtml(targetNames)}</div>
+                <div class='lib-actions'>
+                    ${primaryAction}
+                    <button data-qact='edit'>Edit libraries</button>
+                    <a href='${getSciXAbsUrl(item.id)}' target='_blank' rel='noopener'>SciX</a>
+                    <button data-qact='remove' class='danger'>Remove</button>
+                </div>
+            </div>`;
+    }).join('');
+}
+
+export function switchLibraryTab(tab = 'saved') {
+    activeLibraryTab = tab === 'scix' ? 'scix' : 'saved';
+    select('#libTabs').querySelectorAll('button[data-tab]').forEach((btn) => {
+        btn.setAttribute('aria-pressed', String(btn.dataset.tab === activeLibraryTab));
+    });
+    select('#libSavedPanel').hidden = activeLibraryTab !== 'saved';
+    select('#scixQueuePanel').hidden = activeLibraryTab !== 'scix';
+    if (activeLibraryTab === 'scix') {
+        renderSciXQueueList();
+    } else {
+        renderLibraryList();
+    }
+}
+
+export function openLibraryDialog(initialTab = 'saved') {
+    switchLibraryTab(initialTab);
+    renderLibraryBadge();
     libraryDialog.showModal();
+}
+
+function renderSciXPickerLibraries(selectedIds) {
+    const libs = state.scix?.libraries || [];
+    const selectedSet = new Set(selectedIds || []);
+    if (libs.length === 0) {
+        select('#scixPickLibs').innerHTML = `<p class='hint' style='margin: 6px 0 0'>No SciX libraries found yet. Create one below.</p>`;
+        return;
+    }
+    select('#scixPickLibs').innerHTML = libs.map((lib) => `
+        <label class='scix-pick-opt'>
+            <span class='scix-pick-opt-left'>
+                <input type='checkbox' value='${escapeHtml(lib.id)}' ${selectedSet.has(lib.id) ? 'checked' : ''}>
+                <span>${escapeHtml(lib.name)}</span>
+            </span>
+            <span class='scix-pick-count'>${lib.num_documents}</span>
+        </label>
+    `).join('');
+}
+
+export async function openSciXPicker(paper) {
+    if (!paper) {
+        return;
+    }
+    activeSciXPaper = paper;
+    const cleanId = normalizeArxivId(paper.id);
+    select('#scixPickPaper').textContent = paper.title || cleanId;
+    select('#scixNewLibName').value = '';
+
+    const tokenPresent = hasSciXToken();
+    select('#scixPickBody').hidden = !tokenPresent;
+    select('#scixPickNoToken').hidden = tokenPresent;
+    select('#scixPickSubmit').hidden = !tokenPresent;
+
+    if (!tokenPresent) {
+        scixPickerDialog.showModal();
+        return;
+    }
+
+    const existingAdded = state.scix?.added?.[cleanId]?.libIds;
+    const existingQueued = (state.scix?.queue || []).find((item) => item.id === cleanId)?.targetLibIds;
+    const preselected = existingQueued || existingAdded || state.scix?.defaultLibIds || [];
+
+    renderSciXPickerLibraries(preselected);
+    scixPickerDialog.showModal();
+
+    if ((state.scix?.libraries || []).length === 0) {
+        try {
+            await fetchSciXLibraries(true);
+            renderSciXPickerLibraries(preselected);
+        } catch (err) {
+            showToast(err.message || 'Could not load SciX libraries');
+        }
+    }
+}
+
+function renderSciXSettingsControls() {
+    select('#setScixToken').value = state.scix?.token || '';
+    select('#setScixProxy').value = state.scix?.proxyUrl || DEFAULT_SCIX_PROXY;
+    const libs = state.scix?.libraries || [];
+    const statusEl = select('#scixStatus');
+    const wrapEl = select('#setScixDefaultLibsWrap');
+
+    if (!hasSciXToken()) {
+        statusEl.textContent = 'Not connected · enter your SciX API token above';
+        wrapEl.hidden = true;
+        return;
+    }
+    statusEl.textContent = libs.length > 0
+        ? `Connected · ${libs.length} librar${libs.length === 1 ? 'y' : 'ies'} loaded`
+        : 'Token saved · click Connect to load libraries';
+
+    wrapEl.hidden = libs.length === 0;
+    if (libs.length > 0) {
+        const defaultSet = new Set(state.scix?.defaultLibIds || []);
+        select('#setScixDefaultLibs').innerHTML = libs.map((lib) => (
+            `<button type='button' class='chip' data-scix-lib='${escapeHtml(lib.id)}' aria-pressed='${defaultSet.has(lib.id)}'>` +
+            `${escapeHtml(lib.name)}` +
+            `</button>`
+        )).join('');
+    }
 }
 
 export function renderArchiveList() {
@@ -233,7 +432,13 @@ export function openSettingsDialog() {
     renderRankingControls(ranking);
     select('#setLimit').value = state.limit;
     select('#setLimitVal').textContent = state.limit;
+    const dayOffsetEl = select('#setDayOffset');
+    dayOffsetEl.innerHTML = DAY_OFFSET_OPTIONS.map(
+        (opt) => `<option value='${opt.value}'>${escapeHtml(opt.label)}</option>`
+    ).join('');
+    dayOffsetEl.value = String(state.preferredDayOffset || 0);
     updateThemeControlButtons(state.theme);
+    renderSciXSettingsControls();
 
     const allSignals = Object.values(state.mem);
     const posCount = allSignals.filter((m) => m.w > 0).length;
@@ -258,6 +463,13 @@ export function initDialogs() {
         }
     });
 
+    select('#libTabs').addEventListener('click', (event) => {
+        const btn = event.target.closest('button[data-tab]');
+        if (btn) {
+            switchLibraryTab(btn.dataset.tab);
+        }
+    });
+
     select('#libList').addEventListener('click', (event) => {
         const actionBtn = event.target.closest('button[data-act]');
         if (!actionBtn) {
@@ -265,6 +477,10 @@ export function initDialogs() {
         }
         const paperId = actionBtn.closest('.lib-item').dataset.id;
         const entry = state.lib.find((item) => item.id === paperId);
+        if (actionBtn.dataset.act === 'scix' && entry) {
+            openSciXPicker(entry);
+            return;
+        }
         if (actionBtn.dataset.act === 'copy' && entry) {
             const ok = copyTextToClipboard(formatBibtex([entry]));
             showToast(ok ? 'BibTeX copied' : 'Clipboard unavailable');
@@ -280,6 +496,161 @@ export function initDialogs() {
         renderLibraryList();
         renderLibraryBadge();
     });
+
+    select('#scixQueueList').addEventListener('click', async (event) => {
+        const actionBtn = event.target.closest('button[data-qact]');
+        if (!actionBtn) {
+            return;
+        }
+        const qid = actionBtn.closest('.lib-item').dataset.qid;
+        const qItem = (state.scix?.queue || []).find((item) => item.id === qid);
+        const act = actionBtn.dataset.qact;
+
+        if (act === 'remove') {
+            removeFromSciXQueue(qid);
+            renderSciXQueueList();
+            renderLibraryBadge();
+            return;
+        }
+        if (act === 'edit' && qItem) {
+            openSciXPicker(qItem);
+            return;
+        }
+        if (act === 'check') {
+            actionBtn.disabled = true;
+            try {
+                const res = await refreshSciXQueue();
+                renderSciXQueueList();
+                renderLibraryBadge();
+                showToast(res.newlyReadyCount > 0 ? 'Paper is now available in SciX' : 'Still waiting for SciX indexing');
+            } catch (err) {
+                showToast(err.message || 'Could not check SciX');
+            } finally {
+                actionBtn.disabled = false;
+            }
+            return;
+        }
+        if (act === 'commit' && qItem) {
+            actionBtn.disabled = true;
+            try {
+                const res = await commitQueueItem(qid);
+                if (res?.status === 'added') {
+                    showToast('Added to SciX');
+                }
+                renderSciXQueueList();
+                renderLibraryBadge();
+            } catch (err) {
+                showToast(err.message || 'Could not add to SciX');
+            } finally {
+                actionBtn.disabled = false;
+            }
+        }
+    });
+
+    select('#scixAddAllBtn').onclick = async () => {
+        const btn = select('#scixAddAllBtn');
+        btn.disabled = true;
+        try {
+            const count = await commitAllReadyQueueItems();
+            showToast(`Added ${count} paper${count === 1 ? '' : 's'} to SciX`);
+            renderSciXQueueList();
+            renderLibraryBadge();
+        } catch (err) {
+            showToast(err.message || 'Could not add papers to SciX');
+        } finally {
+            btn.disabled = false;
+        }
+    };
+
+    select('#scixCheckBtn').onclick = async () => {
+        const btn = select('#scixCheckBtn');
+        btn.disabled = true;
+        try {
+            const res = await refreshSciXQueue();
+            renderSciXQueueList();
+            renderLibraryBadge();
+            if (res.readyCount > 0) {
+                showToast(`${res.readyCount} paper${res.readyCount === 1 ? '' : 's'} ready in SciX`);
+            } else {
+                showToast('No new SciX records yet');
+            }
+        } catch (err) {
+            showToast(err.message || 'Could not check SciX');
+        } finally {
+            btn.disabled = false;
+        }
+    };
+
+    select('#scixNewLibBtn').onclick = async () => {
+        const input = select('#scixNewLibName');
+        const name = input.value.trim();
+        if (!name) {
+            showToast('Enter a library name');
+            return;
+        }
+        const btn = select('#scixNewLibBtn');
+        btn.disabled = true;
+        try {
+            const newId = await createSciXLibrary(name);
+            input.value = '';
+            const currentChecked = [...select('#scixPickLibs').querySelectorAll('input:checked')].map((el) => el.value);
+            if (newId) {
+                currentChecked.push(newId);
+            }
+            renderSciXPickerLibraries(currentChecked);
+            showToast(`Created library "${name}"`);
+        } catch (err) {
+            showToast(err.message || 'Could not create SciX library');
+        } finally {
+            btn.disabled = false;
+        }
+    };
+
+    select('#scixPickSubmit').onclick = async () => {
+        if (!activeSciXPaper) {
+            return;
+        }
+        const selectedLibIds = [...select('#scixPickLibs').querySelectorAll('input:checked')].map((el) => el.value);
+        if (selectedLibIds.length === 0) {
+            showToast('Select at least one library');
+            return;
+        }
+        const btn = select('#scixPickSubmit');
+        btn.disabled = true;
+        try {
+            const res = await sendPaperToSciX(activeSciXPaper, selectedLibIds);
+            scixPickerDialog.close();
+            if (res.status === 'added') {
+                showToast(`Added to ${res.libIds.length} SciX librar${res.libIds.length === 1 ? 'y' : 'ies'}`);
+            } else {
+                showToast('Not yet in SciX — added to SciX Queue');
+            }
+            renderLibraryBadge();
+            if (libraryDialog.open) {
+                if (activeLibraryTab === 'scix') {
+                    renderSciXQueueList();
+                } else {
+                    renderLibraryList();
+                }
+            }
+            const currentPaper = getCurrentPaper();
+            if (currentPaper && normalizeArxivId(currentPaper.id) === normalizeArxivId(activeSciXPaper.id)) {
+                const cardBtn = document.querySelector('#stage [data-scix]');
+                if (cardBtn) {
+                    cardBtn.textContent = res.status === 'added' ? 'In SciX ✓' : 'Queued in SciX';
+                }
+            }
+        } catch (err) {
+            showToast(err.message || 'Could not send to SciX');
+        } finally {
+            btn.disabled = false;
+        }
+    };
+
+    select('#scixOpenSettingsBtn').onclick = () => {
+        scixPickerDialog.close();
+        openSettingsDialog();
+    };
 
     select('#libFilter').addEventListener('input', renderLibraryList);
 
@@ -323,6 +694,32 @@ export function initDialogs() {
     select('#setSources').addEventListener('click', handleChipClick);
     select('#setCats').addEventListener('click', handleChipClick);
     select('#setQuartiles').addEventListener('click', handleChipClick);
+    select('#setScixDefaultLibs').addEventListener('click', handleChipClick);
+
+    select('#scixConnectBtn').onclick = async () => {
+        const btn = select('#scixConnectBtn');
+        state.scix.token = select('#setScixToken').value.trim();
+        state.scix.proxyUrl = select('#setScixProxy').value.trim() || DEFAULT_SCIX_PROXY;
+        scheduleSave();
+
+        if (!hasSciXToken()) {
+            renderSciXSettingsControls();
+            showToast('Enter a SciX API token first');
+            return;
+        }
+        btn.disabled = true;
+        select('#scixStatus').textContent = 'Connecting to SciX…';
+        try {
+            const libs = await fetchSciXLibraries(true);
+            renderSciXSettingsControls();
+            showToast(`Connected · ${libs.length} SciX librar${libs.length === 1 ? 'y' : 'ies'}`);
+        } catch (err) {
+            select('#scixStatus').textContent = err.message || 'Connection failed';
+            showToast(err.message || 'Could not connect to SciX');
+        } finally {
+            btn.disabled = false;
+        }
+    };
 
     select('#setSortBy').addEventListener('change', (event) => {
         if (!settingsDraft) {
@@ -405,7 +802,12 @@ export function initDialogs() {
         state.quartiles = nextQuartiles;
         state.ranking = nextRanking;
         state.limit = nextLimit;
+        state.preferredDayOffset = Math.max(0, Number(select('#setDayOffset').value) || 0);
         state.theme = settingsDraft.theme;
+        state.scix.token = select('#setScixToken').value.trim();
+        state.scix.proxyUrl = select('#setScixProxy').value.trim() || DEFAULT_SCIX_PROXY;
+        state.scix.defaultLibIds = [...select('#setScixDefaultLibs').querySelectorAll('.chip[aria-pressed=true]')]
+            .map((btn) => btn.dataset.scixLib);
         settingsDraft = null;
         scheduleSave();
 

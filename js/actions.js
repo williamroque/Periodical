@@ -10,7 +10,7 @@ import {
 import { copyPaperBibtex, copyTextToClipboard, createLibraryEntry, formatBibtex } from './bibtex.js';
 import { openFigureLightbox, showToast } from './ui.js';
 import { renderApp, renderProgressSegments, stageEl, updateDockButtons } from './views.js';
-import { renderLibraryBadge } from './dialogs.js';
+import { openSciXPicker, renderLibraryBadge } from './dialogs.js';
 
 export let isTransitioning = false;
 
@@ -235,6 +235,7 @@ export function bindCardInteractions(cardEl, paper) {
     });
 
     select('[data-copy]', cardEl).addEventListener('click', () => copyPaperBibtex(paper));
+    select('[data-scix]', cardEl)?.addEventListener('click', () => openSciXPicker(paper));
 
     cardEl.querySelectorAll('a.chip-link').forEach((link) => {
         link.addEventListener('click', () => {

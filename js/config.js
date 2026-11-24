@@ -1,5 +1,13 @@
 export const DAY_MS = 86400000;
 export const STORAGE_KEY = 'periodical.v1';
+export const DEFAULT_SCIX_PROXY = 'https://periodical-scix-proxy.william-aroque.workers.dev';
+export const DAY_OFFSET_OPTIONS = [
+    { value: 0, label: 'Latest (Today)' },
+    { value: 1, label: '1 day ago' },
+    { value: 2, label: '2 days ago' },
+    { value: 3, label: '3 days ago' },
+    { value: 5, label: '5 days ago' },
+];
 export const DEFAULT_RANKING = {
     sortBy: 'weighted',
     weights: {
@@ -66,10 +74,20 @@ export const DEFAULT_STATE = {
     quartiles: [],
     ranking: structuredClone(DEFAULT_RANKING),
     limit: 10,
+    preferredDayOffset: 0,
     theme: 'auto',
     onboarded: false,
     mem: {},
     lib: [],
+    scix: {
+        token: '',
+        proxyUrl: DEFAULT_SCIX_PROXY,
+        libraries: [],
+        librariesFetchedAt: 0,
+        defaultLibIds: [],
+        queue: [],
+        added: {},
+    },
     day: null,
     days: {},
 };

@@ -32,7 +32,7 @@
                     </svg>
                 </span>
                 <span class='brand-name'>Periodical</span>
-                <span class='brand-date' id='date'></span>
+                <button class='brand-date' id='date' type='button' title='Choose date (A)'></button>
             </div>
             <div class='top-actions'>
                 <button class='icon-btn' id='archiveBtn' aria-label='Archive' title='Archive (A)'></button>
@@ -99,6 +99,13 @@
                 <input type='range' id='setLimit' min='3' max='30' step='1'>
                 <p class='hint'>A small daily stack beats an endless feed. You can always ask for a few more.</p>
             </div>
+            <div class='section'>
+                <div class='section-row'>
+                    <label class='label' for='setDayOffset' style='margin: 0'>Default feed date</label>
+                    <select id='setDayOffset' class='sort-select'></select>
+                </div>
+                <p class='hint'>Open an earlier day on startup so more preprints already have SciX records.</p>
+            </div>
             <div class='section section-row'>
                 <span class='label' style='margin: 0'>Appearance</span>
                 <div class='seg-ctl' id='setTheme'>
@@ -106,6 +113,26 @@
                     <button data-v='light'>Light</button>
                     <button data-v='dark'>Dark</button>
                 </div>
+            </div>
+            <div class='section'>
+                <div class='section-row' style='margin-bottom: 8px'>
+                    <label class='label' for='setScixToken' style='margin: 0'>SciX integration</label>
+                    <a class='link-btn' href='https://scixplorer.org/user/settings/token' target='_blank' rel='noopener' style='font-size: 12.5px'>Get API token ↗</a>
+                </div>
+                <div class='scix-connect-row'>
+                    <input type='password' id='setScixToken' placeholder='Paste SciX / ADS API token' autocomplete='off' spellcheck='false'>
+                    <button class='btn soft sm' id='scixConnectBtn' type='button'>Connect</button>
+                </div>
+                <p class='stat-line' id='scixStatus' style='margin: 8px 0 0'></p>
+                <div id='setScixDefaultLibsWrap' hidden style='margin-top: 12px'>
+                    <span class='label'>Default SciX libraries</span>
+                    <div class='chips' id='setScixDefaultLibs'></div>
+                </div>
+                <details class='scix-adv'>
+                    <summary>Proxy settings</summary>
+                    <input type='url' id='setScixProxy' placeholder='https://periodical-scix-proxy.william-aroque.workers.dev' style='margin-top: 8px'>
+                    <p class='hint'>Token stays in this browser; requests pass through the CORS proxy.</p>
+                </details>
             </div>
             <div class='section'>
                 <span class='label'>Your data</span>
@@ -133,15 +160,63 @@
             <h2 class='d-title' id='libTitle'>Library <small id='libCount'></small></h2>
             <button class='icon-btn' data-close aria-label='Close'></button>
         </div>
-        <div class='lib-tools' id='libTools'>
-            <div class='lib-export'>
-                <button class='btn accent sm' id='exportBtn'></button>
-                <button class='btn soft sm' id='copyAllBtn' style='flex: 0 0 auto'>Copy BibTeX</button>
+        <div class='lib-tabs-wrap'>
+            <div class='seg-ctl lib-tabs' id='libTabs' role='tablist'>
+                <button type='button' data-tab='saved' aria-pressed='true'>Saved</button>
+                <button type='button' data-tab='scix' aria-pressed='false'>SciX Queue <span id='scixQueueTabCount'></span></button>
             </div>
-            <p class='hint'>In Zotero: <b>File → Import…</b> the downloaded <code>.bib</code>, or <b>File → Import from Clipboard</b> after copying.</p>
-            <input type='search' id='libFilter' placeholder='Filter' style='margin-top: 12px; height: 42px; padding: 0 14px; border-radius: 12px; font-size: 15px' hidden>
         </div>
-        <div class='lib-list' id='libList'></div>
+        <div id='libSavedPanel' class='lib-panel'>
+            <div class='lib-tools' id='libTools'>
+                <div class='lib-export'>
+                    <button class='btn accent sm' id='exportBtn'></button>
+                    <button class='btn soft sm' id='copyAllBtn' style='flex: 0 0 auto'>Copy BibTeX</button>
+                </div>
+                <p class='hint'>In Zotero: <b>File → Import…</b> the downloaded <code>.bib</code>, or <b>File → Import from Clipboard</b> after copying.</p>
+                <input type='search' id='libFilter' placeholder='Filter' style='margin-top: 12px; height: 42px; padding: 0 14px; border-radius: 12px; font-size: 15px' hidden>
+            </div>
+            <div class='lib-list' id='libList'></div>
+        </div>
+        <div id='scixQueuePanel' class='lib-panel' hidden>
+            <div class='lib-tools' id='scixQueueTools'>
+                <div class='lib-export'>
+                    <button class='btn accent sm' id='scixAddAllBtn' type='button'>Add all ready</button>
+                    <button class='btn soft sm' id='scixCheckBtn' type='button' style='flex: 0 0 auto'>Check now</button>
+                </div>
+                <p class='hint'>Papers not yet indexed in SciX wait here and are checked automatically when you open Periodical.</p>
+            </div>
+            <div class='lib-list' id='scixQueueList'></div>
+        </div>
+    </dialog>
+
+    <dialog id='scixPicker' aria-labelledby='scixPickTitle'>
+        <div class='d-head'>
+            <h2 class='d-title' id='scixPickTitle'>Add to SciX</h2>
+            <button class='icon-btn' data-close aria-label='Close'></button>
+        </div>
+        <div class='d-body'>
+            <p class='scix-pick-paper' id='scixPickPaper'></p>
+            <div id='scixPickBody'>
+                <span class='label'>Choose libraries</span>
+                <div class='scix-pick-list' id='scixPickLibs'></div>
+                <div class='scix-new-lib'>
+                    <input type='text' id='scixNewLibName' placeholder='New library name'>
+                    <button class='btn soft sm' id='scixNewLibBtn' type='button'>Create</button>
+                </div>
+                <p class='hint'>If SciX hasn’t indexed this preprint yet, it will be added to your SciX Queue.</p>
+            </div>
+            <div class='empty' id='scixPickNoToken' hidden style='padding: 28px 10px'>
+                <b>Connect SciX first</b>
+                Add your SciX API token in Preferences to save papers to your libraries.
+                <div style='margin-top: 14px'>
+                    <button class='btn sm' id='scixOpenSettingsBtn' type='button'>Open Preferences</button>
+                </div>
+            </div>
+        </div>
+        <div class='d-foot'>
+            <button class='btn soft sm' data-close type='button'>Cancel</button>
+            <button class='btn accent sm' id='scixPickSubmit' type='button'>Add to selected</button>
+        </div>
     </dialog>
 
     <dialog id='archive' aria-labelledby='arcTitle'>

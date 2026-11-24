@@ -23,27 +23,39 @@ export function normalizeRankingConfig(raw) {
     return base;
 }
 
+export function normalizeUserState(raw) {
+    const base = structuredClone(DEFAULT_STATE);
+    const loaded = { ...base, ...(raw || {}) };
+    loaded.ranking = normalizeRankingConfig(loaded.ranking);
+    loaded.scix = { ...base.scix, ...(raw?.scix || {}) };
+    loaded.scix.libraries = Array.isArray(loaded.scix.libraries) ? loaded.scix.libraries : [];
+    loaded.scix.defaultLibIds = Array.isArray(loaded.scix.defaultLibIds) ? loaded.scix.defaultLibIds : [];
+    loaded.scix.queue = Array.isArray(loaded.scix.queue) ? loaded.scix.queue : [];
+    loaded.scix.added = loaded.scix.added && typeof loaded.scix.added === 'object' ? loaded.scix.added : {};
+    loaded.preferredDayOffset = Number.isFinite(Number(loaded.preferredDayOffset))
+        ? Math.max(0, Number(loaded.preferredDayOffset))
+        : 0;
+    loaded.days = loaded.days && typeof loaded.days === 'object' ? loaded.days : {};
+    if (loaded.day && loaded.day.date && !loaded.days[loaded.day.date]) {
+        loaded.days[loaded.day.date] = loaded.day;
+    }
+    return loaded;
+}
+
 export function loadUserState() {
     try {
         const savedJson = localStorage.getItem(STORAGE_KEY) || localStorage.getItem('triage.v4');
         if (savedJson) {
-            const loaded = { ...structuredClone(DEFAULT_STATE), ...JSON.parse(savedJson) };
-            loaded.ranking = normalizeRankingConfig(loaded.ranking);
-            loaded.days = loaded.days && typeof loaded.days === 'object' ? loaded.days : {};
-            if (loaded.day && loaded.day.date && !loaded.days[loaded.day.date]) {
-                loaded.days[loaded.day.date] = loaded.day;
-            }
-            return loaded;
+            return normalizeUserState(JSON.parse(savedJson));
         }
         const legacyRaw = localStorage.getItem('arxiv_triage_cfg_v3');
         const legacy = JSON.parse(legacyRaw || 'null');
         if (legacy && legacy.prompt) {
-            return {
-                ...structuredClone(DEFAULT_STATE),
+            return normalizeUserState({
                 prompt: legacy.prompt,
                 limit: clamp(legacy.limit || 10, 3, 30),
                 onboarded: true,
-            };
+            });
         }
     } catch (err) {
         console.warn('Resetting unreadable local state', err);
@@ -55,7 +67,7 @@ export let state = loadUserState();
 let saveTimerId = 0;
 
 export function replaceState(nextState) {
-    state = nextState;
+    state = normalizeUserState(nextState);
 }
 
 export function scheduleSave() {

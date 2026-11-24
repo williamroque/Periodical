@@ -39,6 +39,7 @@ import { buildDailyStack, rankCandidatePool } from './ranking.js';
 import { showToast } from './ui.js';
 import { bindCardInteractions, goToPreviousPaper } from './actions.js';
 import { openLibraryDialog, renderLibraryBadge } from './dialogs.js';
+import { getSciXAbsUrl, normalizeArxivId } from './scix.js';
 
 export const stageEl = select('#stage');
 
@@ -191,6 +192,7 @@ export function renderPaperCard(paper, animationClass) {
 
     const externalLinks = [
         `<a class='chip-link' href='${getArxivAbsUrl(paper)}' target='_blank' rel='noopener'>arXiv ${ICONS.arrow}</a>`,
+        `<a class='chip-link' href='${getSciXAbsUrl(paper)}' target='_blank' rel='noopener'>SciX ${ICONS.arrow}</a>`,
     ];
     if (paper.html) {
         externalLinks.push(`<a class='chip-link' href='${getArxivHtmlUrl(paper)}' target='_blank' rel='noopener' data-phase2>HTML ${ICONS.arrow}</a>`);
@@ -202,6 +204,11 @@ export function renderPaperCard(paper, animationClass) {
         externalLinks.push(`<a class='chip-link' href='https://doi.org/${escapeHtml(paper.doi)}' target='_blank' rel='noopener'>DOI ${ICONS.arrow}</a>`);
     }
     externalLinks.push(`<button class='chip-link' data-copy>${ICONS.copy} BibTeX</button>`);
+    const cleanId = normalizeArxivId(paper.id);
+    const inSciX = Boolean(state.scix?.added?.[cleanId]);
+    const queuedSciX = (state.scix?.queue || []).find((item) => item.id === cleanId);
+    const scixBtnLabel = inSciX ? 'In SciX ✓' : (queuedSciX ? 'Queued in SciX' : '+ SciX library');
+    externalLinks.push(`<button class='chip-link' data-scix>${scixBtnLabel}</button>`);
 
     const wrapClasses = [
         'card-wrap',

@@ -25,7 +25,9 @@ import {
     stepDeeper,
 } from './actions.js';
 import { renderApp, renderEmptyView, stageEl } from './views.js';
-import { initDialogs, openArchiveDialog, openLibraryDialog, openSettingsDialog } from './dialogs.js';
+import { initDialogs, openArchiveDialog, openLibraryDialog, openSettingsDialog, renderLibraryBadge } from './dialogs.js';
+import { hasSciXToken, refreshSciXQueue } from './scix.js';
+import { showToast } from './ui.js';
 
 document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
@@ -68,8 +70,9 @@ select('#backBtn').innerHTML = ICONS.back;
 select('#skipBtn').innerHTML = ICONS.skip;
 select('#saveBtn').innerHTML = ICONS.bookmark;
 
+select('#date').onclick = openArchiveDialog;
 select('#archiveBtn').onclick = openArchiveDialog;
-select('#libBtn').onclick = openLibraryDialog;
+select('#libBtn').onclick = () => openLibraryDialog('saved');
 select('#setBtn').onclick = openSettingsDialog;
 select('#backBtn').onclick = goToPreviousPaper;
 select('#skipBtn').onclick = skipCurrentPaper;
@@ -177,13 +180,24 @@ async function initializeApp() {
         if (daysRes && daysRes.ok) {
             const manifest = await daysRes.json();
             if (manifest && Array.isArray(manifest.days)) {
-                manifestDays = manifest.days.slice(0, 8);
+                manifestDays = manifest.days.slice(0, 15);
             }
         }
         if (manifestDays.length === 0 && pool.date) {
             manifestDays = [{ date: pool.date, count: pool.papers.length }];
         }
         archiveState.days = manifestDays;
+
+        const offset = Math.max(0, Number(state.preferredDayOffset) || 0);
+        if (offset > 0 && manifestDays.length > 1) {
+            const targetDate = manifestDays[Math.min(offset, manifestDays.length - 1)].date;
+            if (targetDate && targetDate !== pool.date) {
+                const offsetRes = await fetch(`data/archive/${targetDate}.json`, { cache: 'no-cache' }).catch(() => null);
+                if (offsetRes && offsetRes.ok) {
+                    ingestDailyFeed(await offsetRes.json());
+                }
+            }
+        }
     } catch (err) {
         console.warn('Could not load data/today.json', err);
         const protocolHint = location.protocol === 'file:'
@@ -199,6 +213,22 @@ async function initializeApp() {
         }
     }
     renderApp('in');
+
+    if (hasSciXToken() && (state.scix?.queue || []).length > 0) {
+        refreshSciXQueue()
+            .then((res) => {
+                renderLibraryBadge();
+                if (res.readyCount > 0) {
+                    const n = res.readyCount;
+                    showToast(
+                        `${n} paper${n === 1 ? '' : 's'} in your SciX Queue ${n === 1 ? 'is' : 'are'} now available`,
+                        'Review',
+                        () => openLibraryDialog('scix')
+                    );
+                }
+            })
+            .catch((err) => console.warn('SciX queue check failed', err));
+    }
 }
 
 initializeApp();
