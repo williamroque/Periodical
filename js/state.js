@@ -102,6 +102,7 @@ export function ingestDailyFeed(rawJson) {
             cats: item.cats || item.categories || [],
             comment: item.comment || '',
             journal: item.journal || '',
+            venue: item.venue || '',
             doi: item.doi || '',
             accepted: Boolean(item.accepted),
             code: item.code || item.github_url || '',

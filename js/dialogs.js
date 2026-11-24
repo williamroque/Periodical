@@ -21,7 +21,9 @@ import { applyThemePreference, showToast } from './ui.js';
 import { removeFromLibrary } from './actions.js';
 import {
     buildCategoryChipsHtml,
+    buildQuartileChipsHtml,
     collectSelectedCategories,
+    collectSelectedQuartiles,
     handleChipClick,
     renderApp,
     updateDockButtons,
@@ -177,6 +179,7 @@ export function openSettingsDialog() {
     settingsDraft = { theme: state.theme };
     select('#setPrompt').value = state.prompt;
     select('#setCats').innerHTML = buildCategoryChipsHtml(state.cats);
+    select('#setQuartiles').innerHTML = buildQuartileChipsHtml(state.quartiles || []);
     select('#setLimit').value = state.limit;
     select('#setLimitVal').textContent = state.limit;
     updateThemeControlButtons(state.theme);
@@ -267,6 +270,7 @@ export function initDialogs() {
     };
 
     select('#setCats').addEventListener('click', handleChipClick);
+    select('#setQuartiles').addEventListener('click', handleChipClick);
     select('#setLimit').addEventListener('input', (event) => {
         select('#setLimitVal').textContent = event.target.value;
     });
@@ -287,15 +291,18 @@ export function initDialogs() {
         }
         const nextPrompt = select('#setPrompt').value.trim();
         const nextCats = collectSelectedCategories(select('#setCats'));
+        const nextQuartiles = collectSelectedQuartiles(select('#setQuartiles'));
         const nextLimit = clamp(Number(select('#setLimit').value) || 10, 3, 30);
         const hasRankingChange = (
             nextPrompt !== state.prompt ||
             nextLimit !== state.limit ||
-            nextCats.join() !== state.cats.join()
+            nextCats.join() !== state.cats.join() ||
+            nextQuartiles.join() !== (state.quartiles || []).join()
         );
 
         state.prompt = nextPrompt;
         state.cats = nextCats;
+        state.quartiles = nextQuartiles;
         state.limit = nextLimit;
         state.theme = settingsDraft.theme;
         settingsDraft = null;

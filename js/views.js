@@ -1,6 +1,7 @@
 import {
     DAY_MS,
     PHASES,
+    QUARTILE_OPTIONS,
     getCategoryBadge,
     getCategoryName,
     hasFinePointer,
@@ -13,6 +14,8 @@ import {
     formatIsoDate,
     getArxivAbsUrl,
     getArxivHtmlUrl,
+    getPaperQuartile,
+    getPaperVenue,
     hashString,
     select,
     truncateText,
@@ -185,6 +188,11 @@ export function renderPaperCard(paper, animationClass) {
         remaining <= 1 ? 'only' : '',
     ].filter(Boolean).join(' ');
 
+    const venue = getPaperVenue(paper);
+    const venueHtml = venue
+        ? `<span class='journal' title='${escapeHtml(venue)} · ${escapeHtml(getPaperQuartile(paper))}'>${escapeHtml(venue)}</span>`
+        : '';
+
     stageEl.innerHTML = `
         <div class='${wrapClasses}'>
             <article class='card ${animationClass}' ${phase >= 1 ? 'data-open' : ''} aria-label='${escapeHtml(paper.title)}'>
@@ -195,6 +203,7 @@ export function renderPaperCard(paper, animationClass) {
                     <div class='body'>
                         <div class='head'>
                             <div class='kicker'>
+                                ${venueHtml}
                                 <span class='cat'>
                                     <b>${escapeHtml(getCategoryBadge(paper.cats[0]))}</b>
                                     ${escapeHtml(getCategoryName(paper.cats[0]))}
@@ -306,6 +315,22 @@ export function buildCategoryChipsHtml(selectedCats) {
     }).join('');
 }
 
+export function buildQuartileChipsHtml(selectedQuartiles) {
+    const counts = new Map(QUARTILE_OPTIONS.map((q) => [q, 0]));
+    for (const paper of pool.papers) {
+        const q = getPaperQuartile(paper);
+        counts.set(q, (counts.get(q) || 0) + 1);
+    }
+    return QUARTILE_OPTIONS.map((q) => {
+        const isPressed = selectedQuartiles.includes(q);
+        return (
+            `<button class='chip' data-quartile='${escapeHtml(q)}' aria-pressed='${isPressed}'>` +
+            `${escapeHtml(q)}<span class='n'>${counts.get(q) || 0}</span>` +
+            `</button>`
+        );
+    }).join('');
+}
+
 export function handleChipClick(event) {
     const chip = event.target.closest('.chip');
     if (!chip) {
@@ -318,6 +343,11 @@ export function handleChipClick(event) {
 export function collectSelectedCategories(container) {
     const buttons = container.querySelectorAll('.chip[aria-pressed=true]');
     return [...buttons].map((btn) => btn.dataset.cat);
+}
+
+export function collectSelectedQuartiles(container) {
+    const buttons = container.querySelectorAll('.chip[aria-pressed=true]');
+    return [...buttons].map((btn) => btn.dataset.quartile);
 }
 
 export function renderOnboardingView() {
@@ -419,8 +449,13 @@ export function renderCaughtUpView() {
         ? nextTime.toLocaleString(undefined, { weekday: 'long', hour: 'numeric', minute: '2-digit' })
         : 'soon';
 
+    const allowedQuartiles = new Set(state.quartiles || []);
     const unseenRemaining = pool.papers.filter(
-        (paper) => !day.ids.includes(paper.id) && !savedSet.has(paper.id)
+        (paper) => (
+            !day.ids.includes(paper.id) &&
+            !savedSet.has(paper.id) &&
+            (allowedQuartiles.size === 0 || allowedQuartiles.has(getPaperQuartile(paper)))
+        )
     ).length;
 
     const moreButtonHtml = unseenRemaining > 0

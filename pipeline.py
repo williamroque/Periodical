@@ -99,6 +99,60 @@ CODE_URL_RE = re.compile(
     re.I,
 )
 ACCEPTED_RE = re.compile(r'\b(accepted|in press|published|to appear)\b', re.I)
+NO_VENUE_RE = re.compile(r'\bno\s+journal\b|\bnot\s+(?:yet\s+)?submitted\b', re.I)
+VENUE_CLAUSE_RE = re.compile(
+    r'(?:submitted|accepted(?:\s+in\s+principle)?|to\s+be\s+published|to\s+appear|published|in\s+press)'
+    r'(?:\s+for\s+publication)?\s+(?:in|to|at|by|on)\s+(?:the\s+)?([^.;\n]+)',
+    re.I,
+)
+JOURNAL_PATTERNS = [
+    (re.compile(r'\b(?:The\s+)?Astrophysical\s+Journal\s+Letters\b|\bApJL\b|\bApJ\s+Letters\b', re.I), 'ApJL'),
+    (re.compile(r'\b(?:The\s+)?Astrophysical\s+Journal\s+Supplement(?:\s+Series)?\b|\bApJS\b', re.I), 'ApJS'),
+    (re.compile(r'\b(?:The\s+)?Astrophysical\s+Journal\b|\bApJ\b', re.I), 'ApJ'),
+    (re.compile(r'\b(?:The\s+)?Astronomical\s+Journal\b|\bAJ\b'), 'AJ'),
+    (re.compile(r'\bResearch\s+Notes\s+of\s+the\s+AAS\b|\bRNAAS\b', re.I), 'RNAAS'),
+    (re.compile(r'\bAAS\s+Journals?\b|\bAAS\b'), 'AAS'),
+    (re.compile(r'\bMonthly\s+Notices\s+of\s+the\s+Royal\s+Astronomical\s+Society\s+Letters\b|\bMNRAS\s+Letters\b|\bMNRASL\b', re.I), 'MNRASL'),
+    (re.compile(r'\bMonthly\s+Notices\s+of\s+the\s+Royal\s+Astronomical\s+Society\b|\bMNRAS\b', re.I), 'MNRAS'),
+    (re.compile(r'\bResearch\s+in\s+Astronomy\s+and\s+Astrophysics\b|\bRAA\b', re.I), 'RAA'),
+    (re.compile(r'\bAstronomy\s*(?:&|and)\s*Astrophysics\s+Letters\b|\bA&A\s+Letters\b|\bA&AL\b', re.I), 'A&AL'),
+    (re.compile(r'\bAstronomy\s*(?:&|and)\s*Astrophysics\b|\bA&A\b', re.I), 'A&A'),
+    (re.compile(r'\bPublications\s+of\s+the\s+Astronomical\s+Society\s+of\s+the\s+Pacific\b|\bPASP\b', re.I), 'PASP'),
+    (re.compile(r'\bPublications\s+of\s+the\s+Astronomical\s+Society\s+of\s+Japan\b|\bPASJ\b', re.I), 'PASJ'),
+    (re.compile(r'\bPublications\s+of\s+the\s+Astronomical\s+Society\s+of\s+Australia\b|\bPASA\b', re.I), 'PASA'),
+    (re.compile(r'\b(?:The\s+)?Open\s+Journal\s+of\s+Astrophysics\b|\bOJA\b', re.I), 'OJA'),
+    (re.compile(r'\b(?:The\s+)?Planetary\s+Science\s+Journal\b|\bPSJ\b', re.I), 'PSJ'),
+    (re.compile(r'\bNature\s+Astronomy\b|\bNat\.?\s*Astron\.?', re.I), 'Nat. Astron.'),
+    (re.compile(r'\bNature\s+Communications\b|\bNat\.?\s*Commun\.?', re.I), 'Nat. Commun.'),
+    (re.compile(r'\bNature\s+Physics\b|\bNat\.?\s*Phys\.?', re.I), 'Nat. Phys.'),
+    (re.compile(r'\bPhysical\s+Review\s+Letters\b|\bPhys\.?\s*Rev\.?\s*Lett\.?|\bPRL\b', re.I), 'PRL'),
+    (re.compile(r'\bPhysical\s+Review\s+D\b|\bPhys\.?\s*Rev\.?\s*D\b|\bPRD\b', re.I), 'PRD'),
+    (re.compile(r'\bPhysical\s+Review\s+C\b|\bPhys\.?\s*Rev\.?\s*C\b|\bPRC\b', re.I), 'PRC'),
+    (re.compile(r'\bPhysical\s+Review\s+A\b|\bPhys\.?\s*Rev\.?\s*A\b|\bPRA\b', re.I), 'PRA'),
+    (re.compile(r'\bPhysical\s+Review\s+X\b|\bPhys\.?\s*Rev\.?\s*X\b|\bPRX\b', re.I), 'PRX'),
+    (re.compile(r'\bAstrophysics\s+and\s+Space\s+Science\b|\bAp&SS\b', re.I), 'Ap&SS'),
+    (re.compile(r'\bSpace\s+Science\s+Reviews\b|\bSSRv\b', re.I), 'Space Sci. Rev.'),
+    (re.compile(r'\bAdvances\s+in\s+Space\s+Research\b', re.I), 'Adv. Space Res.'),
+    (re.compile(r'\bAstronomische\s+Nachrichten\b', re.I), 'AN'),
+    (re.compile(r'\bActa\s+Astronautica\b', re.I), 'Acta Astronaut.'),
+    (re.compile(r'\bIcarus\b', re.I), 'Icarus'),
+    (re.compile(r'\bGalaxies\b', re.I), 'Galaxies'),
+    (re.compile(r'\bJournal\s+of\s+Cosmology\s+and\s+Astroparticle\s+Physics\b|\bJCAP\b', re.I), 'JCAP'),
+    (re.compile(r'\bJournal\s+of\s+High\s+Energy\s+Physics\b|\bJHEP\b', re.I), 'JHEP'),
+    (re.compile(r'\bClassical\s+and\s+Quantum\s+Gravity\b|\bCQG\b', re.I), 'CQG'),
+    (re.compile(r'\bEur\.?\s*Phys\.?\s*J\.?\s*C\b|\bEPJC\b', re.I), 'EPJC'),
+    (re.compile(r'\bProc\.?\s*SPIE\b|\bSPIE\b', re.I), 'SPIE'),
+    (re.compile(r'\bFront\.?\s*Astron\.?\s*Space\s*Sci\.?|\bFrontiers\s+in\s+Astronomy\s+and\s+Space\s+Sciences\b', re.I), 'Front. Astron. Space Sci.'),
+    (re.compile(r'\bAPS\s+Open\s+Sci\.?', re.I), 'APS Open Sci.'),
+    (re.compile(r'\bJETP\s+Lett(?:ers|\.)', re.I), 'JETP Lett.'),
+    (re.compile(r'\bSolar\s+Physics\b|\bSol\.?\s*Phys\.?', re.I), 'Sol. Phys.'),
+    (re.compile(r'\bNew\s+Astronomy\s+Reviews\b|\bNewAR\b', re.I), 'NewAR'),
+    (re.compile(r'\bNew\s+Astronomy\b|\bNewA\b', re.I), 'NewA'),
+    (re.compile(r'\bExperimental\s+Astronomy\b', re.I), 'Exp. Astron.'),
+    (re.compile(r'\bJournal\s+of\s+Open\s+Source\s+Software\b|\bJOSS\b', re.I), 'JOSS'),
+    (re.compile(r'\bNature\b'), 'Nature'),
+    (re.compile(r'\bScience\b'), 'Science'),
+]
 
 FINDING_CUE_RE = re.compile(
     r'\b(we (find|show|report|detect|measure|discover|demonstrate|'
@@ -372,6 +426,37 @@ def find_code_link(paper):
     if not matches:
         return None
     return matches[0].rstrip('.')
+
+
+def match_known_venue(text):
+    for pattern, label in JOURNAL_PATTERNS:
+        if pattern.search(text):
+            return label
+    return ''
+
+
+def extract_venue(journal_ref, comment):
+    if journal_ref:
+        known = match_known_venue(journal_ref)
+        if known:
+            return known
+        short = re.split(r'[,;(\d]', journal_ref, maxsplit=1)[0].strip()
+        return short[:28] if short else ''
+    if not comment or NO_VENUE_RE.search(comment):
+        return ''
+    known = match_known_venue(comment)
+    if known:
+        return known
+    match = VENUE_CLAUSE_RE.search(comment)
+    if match:
+        raw = match.group(1).strip()
+        raw = re.split(r',\s*(?:on|held|open access|\d+\s+pages?)\b', raw, maxsplit=1, flags=re.I)[0].strip()
+        paren = re.search(r'\(([A-Z0-9&+-]{2,12})\)', raw)
+        if paren:
+            return paren.group(1)
+        if len(raw) <= 28:
+            return raw
+    return ''
 
 
 class ArxivHtmlFigureParser(HTMLParser):
@@ -763,6 +848,7 @@ def main():
         paper['abstract'] = clean_tex(paper['abstract'])
         paper['comment'] = clean_tex(paper.get('comment', ''))
         paper['journal'] = clean_tex(paper.get('journal', ''))
+        paper['venue'] = extract_venue(paper['journal'], paper['comment'])
         paper['n_authors'] = len(paper['authors'])
         paper['authors'] = paper['authors'][:MAX_AUTHORS]
         has_venue = bool(paper['journal'] or ACCEPTED_RE.search(paper['comment']))
@@ -779,7 +865,7 @@ def main():
 
     exported_keys = [
         'id', 'v', 'type', 'title', 'micro', 'micro_src', 'abstract',
-        'authors', 'n_authors', 'cats', 'comment', 'journal', 'doi',
+        'authors', 'n_authors', 'cats', 'comment', 'journal', 'venue', 'doi',
         'accepted', 'code', 'html', 'fig', 'fig_w', 'fig_h', 'caption', 'vec',
     ]
     papers = [

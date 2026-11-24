@@ -1,5 +1,5 @@
 import { DAY_MS, STOP_WORDS, getCategoryName } from './config.js';
-import { createSeededRandom, hashString, truncateText } from './utils.js';
+import { createSeededRandom, getPaperQuartile, hashString, truncateText } from './utils.js';
 import {
     addScaledVector,
     computeZScores,
@@ -122,7 +122,11 @@ export function getDecayedMemoryVectors() {
 }
 
 export function rankCandidatePool(targetCount, excludedIds, seedSalt = '') {
-    const candidates = pool.papers.filter((paper) => !excludedIds.has(paper.id));
+    const allowedQuartiles = new Set(state.quartiles || []);
+    const candidates = pool.papers.filter((paper) => (
+        !excludedIds.has(paper.id) &&
+        (allowedQuartiles.size === 0 || allowedQuartiles.has(getPaperQuartile(paper)))
+    ));
     if (candidates.length === 0 || targetCount <= 0) {
         return [];
     }

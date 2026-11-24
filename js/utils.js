@@ -1,4 +1,4 @@
-import { COLLABORATION_RE, NAME_PARTICLES, NAME_SUFFIXES } from './config.js';
+import { COLLABORATION_RE, JOURNAL_QUARTILES, NAME_PARTICLES, NAME_SUFFIXES } from './config.js';
 
 export function select(selector, root = document) {
     return root.querySelector(selector);
@@ -119,4 +119,107 @@ export function buildConstellationSvg(paper) {
         `<path d='M${pathCoords}' fill='none' stroke='currentColor' stroke-width='1' opacity='.35'/>` +
         `${circles}</svg>`
     );
+}
+
+const VENUE_PATTERNS = [
+    [/\b(?:The\s+)?Astrophysical\s+Journal\s+Letters\b|\bApJL\b|\bApJ\s+Letters\b/i, 'ApJL'],
+    [/\b(?:The\s+)?Astrophysical\s+Journal\s+Supplement(?:\s+Series)?\b|\bApJS\b/i, 'ApJS'],
+    [/\b(?:The\s+)?Astrophysical\s+Journal\b|\bApJ\b/i, 'ApJ'],
+    [/\b(?:The\s+)?Astronomical\s+Journal\b|\bAJ\b/, 'AJ'],
+    [/\bResearch\s+Notes\s+of\s+the\s+AAS\b|\bRNAAS\b/i, 'RNAAS'],
+    [/\bAAS\s+Journals?\b|\bAAS\b/, 'AAS'],
+    [/\bMonthly\s+Notices\s+of\s+the\s+Royal\s+Astronomical\s+Society\s+Letters\b|\bMNRAS\s+Letters\b|\bMNRASL\b/i, 'MNRASL'],
+    [/\bMonthly\s+Notices\s+of\s+the\s+Royal\s+Astronomical\s+Society\b|\bMNRAS\b/i, 'MNRAS'],
+    [/\bResearch\s+in\s+Astronomy\s+and\s+Astrophysics\b|\bRAA\b/i, 'RAA'],
+    [/\bAstronomy\s*(?:&|and)\s*Astrophysics\s+Letters\b|\bA&A\s+Letters\b|\bA&AL\b/i, 'A&AL'],
+    [/\bAstronomy\s*(?:&|and)\s*Astrophysics\b|\bA&A\b/i, 'A&A'],
+    [/\bPublications\s+of\s+the\s+Astronomical\s+Society\s+of\s+the\s+Pacific\b|\bPASP\b/i, 'PASP'],
+    [/\bPublications\s+of\s+the\s+Astronomical\s+Society\s+of\s+Japan\b|\bPASJ\b/i, 'PASJ'],
+    [/\bPublications\s+of\s+the\s+Astronomical\s+Society\s+of\s+Australia\b|\bPASA\b/i, 'PASA'],
+    [/\b(?:The\s+)?Open\s+Journal\s+of\s+Astrophysics\b|\bOJA\b/i, 'OJA'],
+    [/\b(?:The\s+)?Planetary\s+Science\s+Journal\b|\bPSJ\b/i, 'PSJ'],
+    [/\bNature\s+Astronomy\b|\bNat\.?\s*Astron\.?/i, 'Nat. Astron.'],
+    [/\bNature\s+Communications\b|\bNat\.?\s*Commun\.?/i, 'Nat. Commun.'],
+    [/\bNature\s+Physics\b|\bNat\.?\s*Phys\.?/i, 'Nat. Phys.'],
+    [/\bPhysical\s+Review\s+Letters\b|\bPhys\.?\s*Rev\.?\s*Lett\.?|\bPRL\b/i, 'PRL'],
+    [/\bPhysical\s+Review\s+D\b|\bPhys\.?\s*Rev\.?\s*D\b|\bPRD\b/i, 'PRD'],
+    [/\bPhysical\s+Review\s+C\b|\bPhys\.?\s*Rev\.?\s*C\b|\bPRC\b/i, 'PRC'],
+    [/\bPhysical\s+Review\s+A\b|\bPhys\.?\s*Rev\.?\s*A\b|\bPRA\b/i, 'PRA'],
+    [/\bPhysical\s+Review\s+X\b|\bPhys\.?\s*Rev\.?\s*X\b|\bPRX\b/i, 'PRX'],
+    [/\bAstrophysics\s+and\s+Space\s+Science\b|\bAp&SS\b/i, 'Ap&SS'],
+    [/\bSpace\s+Science\s+Reviews\b|\bSSRv\b/i, 'Space Sci. Rev.'],
+    [/\bAdvances\s+in\s+Space\s+Research\b/i, 'Adv. Space Res.'],
+    [/\bAstronomische\s+Nachrichten\b/i, 'AN'],
+    [/\bActa\s+Astronautica\b/i, 'Acta Astronaut.'],
+    [/\bIcarus\b/i, 'Icarus'],
+    [/\bGalaxies\b/i, 'Galaxies'],
+    [/\bJournal\s+of\s+Cosmology\s+and\s+Astroparticle\s+Physics\b|\bJCAP\b/i, 'JCAP'],
+    [/\bJournal\s+of\s+High\s+Energy\s+Physics\b|\bJHEP\b/i, 'JHEP'],
+    [/\bClassical\s+and\s+Quantum\s+Gravity\b|\bCQG\b/i, 'CQG'],
+    [/\bEur\.?\s*Phys\.?\s*J\.?\s*C\b|\bEPJC\b/i, 'EPJC'],
+    [/\bProc\.?\s*SPIE\b|\bSPIE\b/i, 'SPIE'],
+    [/\bFront\.?\s*Astron\.?\s*Space\s*Sci\.?|\bFrontiers\s+in\s+Astronomy\s+and\s+Space\s+Sciences\b/i, 'Front. Astron. Space Sci.'],
+    [/\bAPS\s+Open\s+Sci\.?/i, 'APS Open Sci.'],
+    [/\bJETP\s+Lett(?:ers|\.)/i, 'JETP Lett.'],
+    [/\bSolar\s+Physics\b|\bSol\.?\s*Phys\.?/i, 'Sol. Phys.'],
+    [/\bNew\s+Astronomy\s+Reviews\b|\bNewAR\b/i, 'NewAR'],
+    [/\bNew\s+Astronomy\b|\bNewA\b/i, 'NewA'],
+    [/\bExperimental\s+Astronomy\b/i, 'Exp. Astron.'],
+    [/\bJournal\s+of\s+Open\s+Source\s+Software\b|\bJOSS\b/i, 'JOSS'],
+    [/\bNature\b/, 'Nature'],
+    [/\bScience\b/, 'Science'],
+];
+
+const NO_VENUE_RE = /\bno\s+journal\b|\bnot\s+(?:yet\s+)?submitted\b/i;
+const VENUE_CLAUSE_RE = /(?:submitted|accepted(?:\s+in\s+principle)?|to\s+be\s+published|to\s+appear|published|in\s+press)(?:\s+for\s+publication)?\s+(?:in|to|at|by|on)\s+(?:the\s+)?([^.;\n]+)/i;
+
+function matchKnownVenue(text) {
+    for (const [pattern, label] of VENUE_PATTERNS) {
+        if (pattern.test(text)) {
+            return label;
+        }
+    }
+    return '';
+}
+
+export function getPaperVenue(paper) {
+    if (paper.venue) {
+        return paper.venue;
+    }
+    if (paper.journal) {
+        const known = matchKnownVenue(paper.journal);
+        if (known) {
+            return known;
+        }
+        const short = paper.journal.split(/[,;(\d]/)[0].trim();
+        return short ? short.slice(0, 28) : '';
+    }
+    const comment = paper.comment || '';
+    if (!comment || NO_VENUE_RE.test(comment)) {
+        return '';
+    }
+    const known = matchKnownVenue(comment);
+    if (known) {
+        return known;
+    }
+    const match = VENUE_CLAUSE_RE.exec(comment);
+    if (match) {
+        const raw = match[1].trim().split(/,\s*(?:on|held|open access|\d+\s+pages?)\b/i)[0].trim();
+        const paren = /\(([A-Z0-9&+-]{2,12})\)/.exec(raw);
+        if (paren) {
+            return paren[1];
+        }
+        if (raw.length <= 28) {
+            return raw;
+        }
+    }
+    return '';
+}
+
+export function getPaperQuartile(paper) {
+    const venue = getPaperVenue(paper);
+    if (!venue) {
+        return 'Unlisted';
+    }
+    return JOURNAL_QUARTILES[venue] || 'Q4';
 }

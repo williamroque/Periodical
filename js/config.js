@@ -3,6 +3,7 @@ export const STORAGE_KEY = 'periodical.v1';
 export const DEFAULT_STATE = {
     prompt: '',
     cats: [],
+    quartiles: [],
     limit: 10,
     theme: 'auto',
     onboarded: false,
@@ -97,6 +98,23 @@ export function getCategoryName(code) {
     }
     return code;
 }
+
+export const QUARTILE_OPTIONS = ['Q1', 'Q2', 'Q3', 'Q4', 'Unlisted'];
+
+export const JOURNAL_QUARTILES = {
+    'Nature': 'Q1', 'Science': 'Q1', 'Nat. Astron.': 'Q1', 'Nat. Commun.': 'Q1', 'Nat. Phys.': 'Q1',
+    'ApJ': 'Q1', 'ApJL': 'Q1', 'ApJS': 'Q1', 'AJ': 'Q1', 'AAS': 'Q1',
+    'MNRAS': 'Q1', 'MNRASL': 'Q1', 'A&A': 'Q1', 'A&AL': 'Q1',
+    'PASP': 'Q1', 'PASJ': 'Q1', 'PSJ': 'Q1', 'OJA': 'Q1', 'Icarus': 'Q1',
+    'Space Sci. Rev.': 'Q1', 'JCAP': 'Q1', 'JHEP': 'Q1',
+    'PRL': 'Q1', 'PRD': 'Q1', 'PRC': 'Q1', 'PRA': 'Q1', 'PRX': 'Q1',
+    'CQG': 'Q1', 'EPJC': 'Q1', 'Sol. Phys.': 'Q1', 'NewAR': 'Q1', 'JOSS': 'Q1',
+    'Acta Astronaut.': 'Q1',
+    'PASA': 'Q2', 'RAA': 'Q2', 'Adv. Space Res.': 'Q2', 'Exp. Astron.': 'Q2',
+    'Ap&SS': 'Q2', 'NewA': 'Q2', 'Front. Astron. Space Sci.': 'Q2', 'RNAAS': 'Q2',
+    'AN': 'Q3', 'Galaxies': 'Q3', 'JETP Lett.': 'Q3',
+    'SPIE': 'Q4', 'APS Open Sci.': 'Q4',
+};
 
 export function getCategoryBadge(code) {
     return (code || '').split('.').pop().slice(0, 4).toUpperCase();
