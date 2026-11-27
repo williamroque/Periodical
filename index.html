@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+    <meta charset='utf-8'>
+    <meta name='viewport' content='width=device-width, initial-scale=1, viewport-fit=cover'>
+    <meta name='theme-color' content='#f5f4f0'>
+    <meta name='apple-mobile-web-app-capable' content='yes'>
+    <meta name='mobile-web-app-capable' content='yes'>
+    <meta name='apple-mobile-web-app-status-bar-style' content='default'>
+    <meta name='description' content='A short, ranked daily stack of astro-ph preprints that learns from what you read — entirely on your device.'>
+    <title>Periodical · daily astro-ph</title>
+    <link rel='icon' href='data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%279%27 fill=%27%23141416%27/%3E%3Ccircle cx=%2716%27 cy=%2716%27 r=%278.5%27 fill=%27none%27 stroke=%27%23fff%27 stroke-opacity=%27.35%27 stroke-width=%271.6%27/%3E%3Ccircle cx=%2722%27 cy=%2710%27 r=%273%27 fill=%27%238f9bff%27/%3E%3C/svg%3E'>
+    <link rel='preconnect' href='https://fonts.googleapis.com'>
+    <link rel='preconnect' href='https://fonts.gstatic.com' crossorigin>
+    <link rel='preload' as='fetch' href='data/today.json' crossorigin>
+    <link href='https://fonts.googleapis.com/css2?family=Inter:wght@400..700&family=Newsreader:ital,opsz,wght@0,6..72,400..600;1,6..72,400..500&display=swap' rel='stylesheet'>
+    <link rel='stylesheet' href='css/base.css'>
+    <link rel='stylesheet' href='css/layout.css'>
+    <link rel='stylesheet' href='css/card.css'>
+    <link rel='stylesheet' href='css/views.css'>
+    <link rel='stylesheet' href='css/dialogs.css'>
+    <link rel='stylesheet' href='css/responsive.css'>
+</head>
+<body>
+    <div class='app'>
+        <header class='top'>
+            <div class='brand'>
+                <span class='mark' aria-hidden='true'>
+                    <svg width='16' height='16' viewBox='0 0 16 16'>
+                        <circle cx='8' cy='8' r='5.5' fill='none' stroke='currentColor' stroke-opacity='.35' stroke-width='1.3' style='color: var(--bg)'/>
+                        <circle cx='11.8' cy='4.4' r='2' fill='var(--accent)'/>
+                    </svg>
+                </span>
+                <span class='brand-name'>Periodical</span>
+                <button class='brand-date' id='date' type='button' title='Choose date (A)'></button>
+            </div>
+            <div class='top-actions'>
+                <button class='icon-btn' id='archiveBtn' aria-label='Archive' title='Archive (A)'></button>
+                <button class='icon-btn' id='libBtn' aria-label='Library' title='Library (L)'></button>
+                <button class='icon-btn' id='setBtn' aria-label='Settings' title='Settings (,)'></button>
+            </div>
+        </header>
+
+        <div class='progress' id='progress' hidden>
+            <div class='segs' id='segs' role='list' aria-label='Today’s stack'></div>
+            <span class='count' id='count'></span>
+        </div>
+
+        <main class='stage' id='stage' aria-live='polite'></main>
+
+        <nav class='dock' id='dock' hidden aria-label='Paper actions'>
+            <button class='ghost' id='backBtn' aria-label='Previous paper' title='Back (U)'></button>
+            <button class='round skip' id='skipBtn' aria-label='Skip' title='Skip (←)'></button>
+            <button class='primary' id='deepBtn'></button>
+            <button class='round save' id='saveBtn' aria-label='Save to library' aria-pressed='false' title='Save (→)'></button>
+        </nav>
+    </div>
+
+    <dialog id='settings' aria-labelledby='setTitle'>
+        <div class='d-head'>
+            <h2 class='d-title' id='setTitle'>Preferences</h2>
+            <button class='icon-btn' data-close aria-label='Close'></button>
+        </div>
+        <div class='d-body'>
+            <div class='section'>
+                <label class='label' for='setPrompt'>Research focus</label>
+                <textarea id='setPrompt' rows='3' placeholder='A sentence or a few keywords about what you work on'></textarea>
+                <p class='hint'>Anchors the ranking each morning. What you read, open and save gradually takes over.</p>
+            </div>
+            <div class='section'>
+                <span class='label'>Telescopes &amp; data sources</span>
+                <div class='chips' id='setSources'></div>
+                <input type='text' id='setKeywords' placeholder='Additional abstract keywords (comma-separated, e.g. eROSITA, ZTF)' style='margin-top: 12px'>
+                <p class='hint'>Papers mentioning these in their abstract are boosted and highlighted.</p>
+            </div>
+            <div class='section'>
+                <label class='label' for='setFollowedAuthors'>Followed authors &amp; collaborators</label>
+                <textarea id='setFollowedAuthors' rows='3' placeholder='One author per line (e.g. Michael Faraday or Faraday, M.)'></textarea>
+                <p class='hint'>Papers by these authors are always included in your daily stack.</p>
+                <div class='scix-connect-row' style='margin-top: 10px'>
+                    <input type='text' id='setScixAuthorQuery' placeholder='Your SciX author or ORCID (e.g. Faraday, M.)' spellcheck='false'>
+                    <button class='btn soft sm' id='scixCollabBtn' type='button'>Sync collaborators</button>
+                </div>
+                <p class='stat-line' id='scixCollabStatus' style='margin: 8px 0 0'></p>
+                <label class='hint' id='setScixIncludeCollabsWrap' hidden style='display: flex; align-items: center; gap: 8px; margin-top: 8px; cursor: pointer'>
+                    <input type='checkbox' id='setScixIncludeCollabs' style='width: auto; margin: 0'>
+                    <span>Always include synced collaborators</span>
+                </label>
+                <p class='hint' id='scixCollabPreview' hidden style='margin-top: 6px'></p>
+            </div>
+            <div class='section'>
+                <span class='label'>Preferred areas</span>
+                <div class='chips' id='setCats'></div>
+            </div>
+            <div class='section'>
+                <span class='label'>Journal ranking</span>
+                <div class='chips' id='setQuartiles'></div>
+                <p class='hint'>Filter by journal quartile (e.g. Q1 &amp; Q2). Leave all unselected to include everything.</p>
+            </div>
+            <div class='section'>
+                <div class='section-row' style='margin-bottom: 10px'>
+                    <label class='label' for='setSortBy' style='margin: 0'>Ranking &amp; sorting</label>
+                    <select id='setSortBy' class='sort-select'></select>
+                </div>
+                <div class='chips' id='setRankPresets'></div>
+                <div class='weight-list' id='setRankWeights'></div>
+                <p class='hint' id='setRankHint'>Assign weights to ranking criteria (0 = off), or choose a direct sort order above.</p>
+            </div>
+            <div class='section'>
+                <div class='section-row'>
+                    <label class='label' for='setLimit' style='margin: 0'>Papers per day</label>
+                    <span class='range-val' id='setLimitVal'></span>
+                </div>
+                <input type='range' id='setLimit' min='3' max='30' step='1'>
+                <p class='hint'>A small daily stack beats an endless feed. You can always ask for a few more.</p>
+            </div>
+            <div class='section'>
+                <div class='section-row'>
+                    <label class='label' for='setDayOffset' style='margin: 0'>Default feed date</label>
+                    <select id='setDayOffset' class='sort-select'></select>
+                </div>
+                <p class='hint'>Open an earlier day on startup so more preprints already have SciX records.</p>
+            </div>
+            <div class='section section-row'>
+                <span class='label' style='margin: 0'>Appearance</span>
+                <div class='seg-ctl' id='setTheme'>
+                    <button data-v='auto'>Auto</button>
+                    <button data-v='light'>Light</button>
+                    <button data-v='dark'>Dark</button>
+                </div>
+            </div>
+            <div class='section'>
+                <div class='section-row' style='margin-bottom: 8px'>
+                    <label class='label' for='setScixToken' style='margin: 0'>SciX integration</label>
+                    <a class='link-btn' href='https://scixplorer.org/user/settings/token' target='_blank' rel='noopener' style='font-size: 12.5px'>Get API token ↗</a>
+                </div>
+                <div class='scix-connect-row'>
+                    <input type='password' id='setScixToken' placeholder='Paste SciX / ADS API token' autocomplete='off' spellcheck='false'>
+                    <button class='btn soft sm' id='scixConnectBtn' type='button'>Connect</button>
+                </div>
+                <p class='stat-line' id='scixStatus' style='margin: 8px 0 0'></p>
+                <div id='setScixDefaultLibsWrap' hidden style='margin-top: 12px'>
+                    <span class='label'>Default SciX libraries</span>
+                    <div class='chips' id='setScixDefaultLibs'></div>
+                </div>
+                <details class='scix-adv'>
+                    <summary>Proxy settings</summary>
+                    <input type='url' id='setScixProxy' placeholder='https://periodical-scix-proxy.william-aroque.workers.dev' style='margin-top: 8px'>
+                    <p class='hint'>Token stays in this browser; requests pass through the CORS proxy.</p>
+                </details>
+            </div>
+            <div class='section'>
+                <span class='label'>Your data</span>
+                <p class='stat-line' id='setStats'></p>
+                <div class='btn-row'>
+                    <button class='btn soft sm' id='backupBtn'>Back up</button>
+                    <button class='btn soft sm' id='restoreBtn'>Restore</button>
+                    <button class='btn soft sm' id='resetLearnBtn'>Reset learning</button>
+                    <button class='btn soft sm danger' id='wipeBtn'>Erase everything</button>
+                    <input type='file' id='restoreFile' accept='application/json,.json' hidden>
+                </div>
+                <p class='hint'>Everything lives in this browser only. Use a backup to move between devices.</p>
+            </div>
+            <div class='section'>
+                <button class='link-btn' id='keysLink'>Keyboard shortcuts &amp; gestures</button>
+            </div>
+        </div>
+        <div class='d-foot'>
+            <button class='btn sm' data-close>Done</button>
+        </div>
+    </dialog>
+
+    <dialog id='library' aria-labelledby='libTitle'>
+        <div class='d-head'>
+            <h2 class='d-title' id='libTitle'>Library <small id='libCount'></small></h2>
+            <button class='icon-btn' data-close aria-label='Close'></button>
+        </div>
+        <div class='lib-tabs-wrap'>
+            <div class='seg-ctl lib-tabs' id='libTabs' role='tablist'>
+                <button type='button' data-tab='saved' aria-pressed='true'>Saved</button>
+                <button type='button' data-tab='scix' aria-pressed='false'>SciX Queue <span id='scixQueueTabCount'></span></button>
+            </div>
+        </div>
+        <div id='libSavedPanel' class='lib-panel'>
+            <div class='lib-tools' id='libTools'>
+                <div class='lib-export'>
+                    <button class='btn accent sm' id='exportBtn'></button>
+                    <button class='btn soft sm' id='copyAllBtn' style='flex: 0 0 auto'>Copy BibTeX</button>
+                </div>
+                <p class='hint'>In Zotero: <b>File → Import…</b> the downloaded <code>.bib</code>, or <b>File → Import from Clipboard</b> after copying.</p>
+                <input type='search' id='libFilter' placeholder='Filter' style='margin-top: 12px; height: 42px; padding: 0 14px; border-radius: 12px; font-size: 15px' hidden>
+            </div>
+            <div class='lib-list' id='libList'></div>
+        </div>
+        <div id='scixQueuePanel' class='lib-panel' hidden>
+            <div class='lib-tools' id='scixQueueTools'>
+                <div class='lib-export'>
+                    <button class='btn accent sm' id='scixAddAllBtn' type='button'>Add all ready</button>
+                    <button class='btn soft sm' id='scixCheckBtn' type='button' style='flex: 0 0 auto'>Check now</button>
+                </div>
+                <p class='hint'>Papers not yet indexed in SciX wait here and are checked automatically when you open Periodical.</p>
+            </div>
+            <div class='lib-list' id='scixQueueList'></div>
+        </div>
+    </dialog>
+
+    <dialog id='scixPicker' aria-labelledby='scixPickTitle'>
+        <div class='d-head'>
+            <h2 class='d-title' id='scixPickTitle'>Add to SciX</h2>
+            <button class='icon-btn' data-close aria-label='Close'></button>
+        </div>
+        <div class='d-body'>
+            <p class='scix-pick-paper' id='scixPickPaper'></p>
+            <div id='scixPickBody'>
+                <span class='label'>Choose libraries</span>
+                <div class='scix-pick-list' id='scixPickLibs'></div>
+                <div class='scix-new-lib'>
+                    <input type='text' id='scixNewLibName' placeholder='New library name'>
+                    <button class='btn soft sm' id='scixNewLibBtn' type='button'>Create</button>
+                </div>
+                <p class='hint'>If SciX hasn’t indexed this preprint yet, it will be added to your SciX Queue.</p>
+            </div>
+            <div class='empty' id='scixPickNoToken' hidden style='padding: 28px 10px'>
+                <b>Connect SciX first</b>
+                Add your SciX API token in Preferences to save papers to your libraries.
+                <div style='margin-top: 14px'>
+                    <button class='btn sm' id='scixOpenSettingsBtn' type='button'>Open Preferences</button>
+                </div>
+            </div>
+        </div>
+        <div class='d-foot'>
+            <button class='btn soft sm' data-close type='button'>Cancel</button>
+            <button class='btn accent sm' id='scixPickSubmit' type='button'>Add to selected</button>
+        </div>
+    </dialog>
+
+    <dialog id='archive' aria-labelledby='arcTitle'>
+        <div class='d-head'>
+            <h2 class='d-title' id='arcTitle'>Archive <small id='arcCount'></small></h2>
+            <button class='icon-btn' data-close aria-label='Close'></button>
+        </div>
+        <div class='d-body'>
+            <div class='arc-list' id='arcList'></div>
+        </div>
+    </dialog>
+
+    <dialog id='keys' aria-labelledby='keysTitle'>
+        <div class='d-head'>
+            <h2 class='d-title' id='keysTitle'>Shortcuts</h2>
+            <button class='icon-btn' data-close aria-label='Close'></button>
+        </div>
+        <div class='d-body'>
+            <div class='keys'>
+                <span><kbd>Space</kbd></span><span>Read the abstract, then scroll it</span>
+                <span><kbd>↵</kbd><kbd>O</kbd></span><span>Open the PDF</span>
+                <span><kbd>→</kbd><kbd>S</kbd></span><span>Save to library &amp; copy BibTeX</span>
+                <span><kbd>←</kbd><kbd>X</kbd></span><span>Skip</span>
+                <span><kbd>U</kbd><kbd>⌫</kbd></span><span>Back to the previous paper</span>
+                <span><kbd>F</kbd></span><span>Enlarge the figure</span>
+                <span><kbd>C</kbd></span><span>Copy BibTeX</span>
+                <span><kbd>A</kbd></span><span>Archive</span>
+                <span><kbd>L</kbd></span><span>Library</span>
+                <span><kbd>,</kbd></span><span>Preferences</span>
+            </div>
+            <p class='hint' style='margin-top: 22px'>On touch screens swipe a card right to save, left to skip; tap the text to read the abstract.</p>
+        </div>
+    </dialog>
+
+    <dialog id='lightbox' aria-label='Figure'>
+        <img alt=''>
+        <p></p>
+    </dialog>
+    <div class='toast' id='toast' role='status' popover='manual'></div>
+    <script type='module' src='js/main.js'></script>
+</body>
+</html>
