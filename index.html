@@ -74,6 +74,21 @@
                 <p class='hint'>Papers mentioning these in their abstract are boosted and highlighted.</p>
             </div>
             <div class='section'>
+                <label class='label' for='setFollowedAuthors'>Followed authors &amp; collaborators</label>
+                <textarea id='setFollowedAuthors' rows='3' placeholder='One author per line (e.g. Aleksandr Mosenkov or Mosenkov, A.)'></textarea>
+                <p class='hint'>Papers by these authors are always included in your daily stack.</p>
+                <div class='scix-connect-row' style='margin-top: 10px'>
+                    <input type='text' id='setScixAuthorQuery' placeholder='Your SciX author or ORCID (e.g. Mosenkov, A.)' spellcheck='false'>
+                    <button class='btn soft sm' id='scixCollabBtn' type='button'>Sync collaborators</button>
+                </div>
+                <p class='stat-line' id='scixCollabStatus' style='margin: 8px 0 0'></p>
+                <label class='hint' id='setScixIncludeCollabsWrap' hidden style='display: flex; align-items: center; gap: 8px; margin-top: 8px; cursor: pointer'>
+                    <input type='checkbox' id='setScixIncludeCollabs' style='width: auto; margin: 0'>
+                    <span>Always include synced collaborators</span>
+                </label>
+                <p class='hint' id='scixCollabPreview' hidden style='margin-top: 6px'></p>
+            </div>
+            <div class='section'>
                 <span class='label'>Preferred areas</span>
                 <div class='chips' id='setCats'></div>
             </div>

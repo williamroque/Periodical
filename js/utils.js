@@ -322,3 +322,91 @@ export function highlightAbstract(abstractText, patterns) {
     }
     return html;
 }
+
+export function parseAuthorList(raw) {
+    return String(raw || '')
+        .split(/[\n;]+/)
+        .map((item) => item.trim())
+        .filter(Boolean);
+}
+
+export function formatAuthorDisplayName(rawName) {
+    const trimmed = String(rawName || '').trim();
+    if (!trimmed.includes(',')) {
+        return trimmed;
+    }
+    const commaIdx = trimmed.indexOf(',');
+    const last = trimmed.slice(0, commaIdx).trim();
+    const first = trimmed.slice(commaIdx + 1).trim();
+    return first ? `${first} ${last}` : last;
+}
+
+export function normalizeAuthorParts(rawName) {
+    const display = formatAuthorDisplayName(rawName)
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/\./g, ' ')
+        .replace(/[^\p{L}\p{N}\s-]/gu, ' ')
+        .toLowerCase()
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    if (!display || COLLABORATION_RE.test(display)) {
+        return null;
+    }
+
+    const tokens = display.split(' ').filter(Boolean);
+    while (tokens.length > 1 && NAME_SUFFIXES.test(tokens[tokens.length - 1])) {
+        tokens.pop();
+    }
+    if (tokens.length < 2) {
+        return { full: display, last: display, first: '', firstInitial: '' };
+    }
+
+    const familyParts = [tokens.pop()];
+    while (tokens.length > 1 && NAME_PARTICLES.test(tokens[tokens.length - 1])) {
+        familyParts.unshift(tokens.pop());
+    }
+    const last = familyParts.join(' ');
+    const first = tokens[0] || '';
+    return {
+        full: `${tokens.join(' ')} ${last}`,
+        last,
+        first,
+        firstInitial: first[0] || '',
+    };
+}
+
+export function authorsMatch(partsA, partsB) {
+    if (!partsA || !partsB || partsA.last !== partsB.last) {
+        return false;
+    }
+    if (partsA.full === partsB.full) {
+        return true;
+    }
+    if (!partsA.first || !partsB.first) {
+        return false;
+    }
+    if (partsA.first.length <= 1 || partsB.first.length <= 1) {
+        return partsA.firstInitial === partsB.firstInitial;
+    }
+    return partsA.first === partsB.first;
+}
+
+export function findMatchedAuthors(paper, followedAuthors = []) {
+    if (!paper?.authors?.length || !followedAuthors?.length) {
+        return [];
+    }
+    const targetParts = followedAuthors.map(normalizeAuthorParts).filter(Boolean);
+    if (targetParts.length === 0) {
+        return [];
+    }
+    const matched = [];
+    for (const authorName of paper.authors) {
+        const paperParts = normalizeAuthorParts(authorName);
+        if (paperParts && targetParts.some((target) => authorsMatch(paperParts, target))) {
+            matched.push(authorName);
+        }
+    }
+    return matched;
+}

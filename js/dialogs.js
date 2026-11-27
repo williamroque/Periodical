@@ -1,6 +1,6 @@
 import { DAY_OFFSET_OPTIONS, DEFAULT_SCIX_PROXY, DEFAULT_STATE, RANKING_CRITERIA, RANKING_PRESETS, SORT_MODES, STORAGE_KEY } from './config.js';
 import { ICONS } from './icons.js';
-import { abbreviateAuthorName, clamp, escapeHtml, formatIsoDate, parseKeywords, select } from './utils.js';
+import { abbreviateAuthorName, clamp, escapeHtml, formatIsoDate, parseAuthorList, parseKeywords, select } from './utils.js';
 import { decodedVectorCache } from './vectors.js';
 import {
     activateDayStack,
@@ -24,6 +24,7 @@ import {
     commitAllReadyQueueItems,
     commitQueueItem,
     createSciXLibrary,
+    fetchSciXCollaborators,
     fetchSciXLibraries,
     getSciXAbsUrl,
     hasSciXToken,
@@ -298,6 +299,37 @@ function renderSciXSettingsControls() {
             `</button>`
         )).join('');
     }
+
+    renderSciXCollaboratorControls();
+}
+
+function renderSciXCollaboratorControls() {
+    select('#setScixAuthorQuery').value = state.scix?.authorQuery || '';
+    const collabs = state.scix?.collaborators || [];
+    const statusEl = select('#scixCollabStatus');
+    const toggleWrap = select('#setScixIncludeCollabsWrap');
+    const previewEl = select('#scixCollabPreview');
+    const syncBtn = select('#scixCollabBtn');
+
+    syncBtn.disabled = !hasSciXToken();
+    if (!hasSciXToken()) {
+        statusEl.textContent = 'Connect your SciX API token below to auto-compile collaborators.';
+    } else if (collabs.length > 0) {
+        statusEl.textContent = `Synced ${collabs.length} collaborator${collabs.length === 1 ? '' : 's'} from SciX.`;
+    } else {
+        statusEl.textContent = 'Enter your name or ORCID and click Sync collaborators.';
+    }
+
+    toggleWrap.hidden = collabs.length === 0;
+    select('#setScixIncludeCollabs').checked = state.scix?.includeCollaborators !== false;
+    previewEl.hidden = collabs.length === 0;
+    if (collabs.length > 0) {
+        const shown = collabs.slice(0, 8).join(', ');
+        const extra = collabs.length > 8 ? ` +${collabs.length - 8} more` : '';
+        previewEl.textContent = `${shown}${extra}`;
+    } else {
+        previewEl.textContent = '';
+    }
 }
 
 export function renderArchiveList() {
@@ -427,6 +459,7 @@ export function openSettingsDialog() {
     select('#setPrompt').value = state.prompt;
     select('#setSources').innerHTML = buildSourceChipsHtml(state.sources || []);
     select('#setKeywords').value = (state.keywords || []).join(', ');
+    select('#setFollowedAuthors').value = (state.followedAuthors || []).join('\n');
     select('#setCats').innerHTML = buildCategoryChipsHtml(state.cats);
     select('#setQuartiles').innerHTML = buildQuartileChipsHtml(state.quartiles || []);
     renderRankingControls(ranking);
@@ -562,6 +595,7 @@ export function initDialogs() {
         }
     };
 
+
     select('#scixCheckBtn').onclick = async () => {
         const btn = select('#scixCheckBtn');
         btn.disabled = true;
@@ -580,6 +614,7 @@ export function initDialogs() {
             btn.disabled = false;
         }
     };
+
 
     select('#scixNewLibBtn').onclick = async () => {
         const input = select('#scixNewLibName');
@@ -605,6 +640,7 @@ export function initDialogs() {
             btn.disabled = false;
         }
     };
+
 
     select('#scixPickSubmit').onclick = async () => {
         if (!activeSciXPaper) {
@@ -646,6 +682,7 @@ export function initDialogs() {
             btn.disabled = false;
         }
     };
+
 
     select('#scixOpenSettingsBtn').onclick = () => {
         scixPickerDialog.close();
@@ -721,6 +758,30 @@ export function initDialogs() {
         }
     };
 
+    select('#scixCollabBtn').onclick = async () => {
+        const btn = select('#scixCollabBtn');
+        const query = select('#setScixAuthorQuery').value.trim();
+        state.scix.authorQuery = query;
+        scheduleSave();
+
+        if (!hasSciXToken()) {
+            showToast('Connect your SciX API token first');
+            return;
+        }
+        btn.disabled = true;
+        select('#scixCollabStatus').textContent = 'Querying SciX publication record…';
+        try {
+            const res = await fetchSciXCollaborators(query);
+            renderSciXCollaboratorControls();
+            showToast(`Synced ${res.collaborators.length} collaborators from ${res.paperCount} papers`);
+        } catch (err) {
+            select('#scixCollabStatus').textContent = err.message || 'Could not sync collaborators';
+            showToast(err.message || 'Could not sync collaborators');
+        } finally {
+            btn.disabled = false;
+        }
+    };
+
     select('#setSortBy').addEventListener('change', (event) => {
         if (!settingsDraft) {
             return;
@@ -780,6 +841,8 @@ export function initDialogs() {
         const nextPrompt = select('#setPrompt').value.trim();
         const nextSources = collectSelectedSources(select('#setSources'));
         const nextKeywords = parseKeywords(select('#setKeywords').value);
+        const nextFollowedAuthors = parseAuthorList(select('#setFollowedAuthors').value);
+        const nextIncludeCollabs = select('#setScixIncludeCollabs').checked;
         const nextCats = collectSelectedCategories(select('#setCats'));
         const nextQuartiles = collectSelectedQuartiles(select('#setQuartiles'));
         const nextRanking = normalizeRankingConfig(settingsDraft.ranking);
@@ -790,6 +853,8 @@ export function initDialogs() {
             nextLimit !== state.limit ||
             nextSources.join() !== (state.sources || []).join() ||
             nextKeywords.join() !== (state.keywords || []).join() ||
+            nextFollowedAuthors.join('\n') !== (state.followedAuthors || []).join('\n') ||
+            nextIncludeCollabs !== (state.scix?.includeCollaborators !== false) ||
             nextCats.join() !== state.cats.join() ||
             nextQuartiles.join() !== (state.quartiles || []).join() ||
             JSON.stringify(nextRanking) !== JSON.stringify(prevRanking)
@@ -798,6 +863,7 @@ export function initDialogs() {
         state.prompt = nextPrompt;
         state.sources = nextSources;
         state.keywords = nextKeywords;
+        state.followedAuthors = nextFollowedAuthors;
         state.cats = nextCats;
         state.quartiles = nextQuartiles;
         state.ranking = nextRanking;
@@ -806,6 +872,8 @@ export function initDialogs() {
         state.theme = settingsDraft.theme;
         state.scix.token = select('#setScixToken').value.trim();
         state.scix.proxyUrl = select('#setScixProxy').value.trim() || DEFAULT_SCIX_PROXY;
+        state.scix.authorQuery = select('#setScixAuthorQuery').value.trim();
+        state.scix.includeCollaborators = nextIncludeCollabs;
         state.scix.defaultLibIds = [...select('#setScixDefaultLibs').querySelectorAll('.chip[aria-pressed=true]')]
             .map((btn) => btn.dataset.scixLib);
         settingsDraft = null;

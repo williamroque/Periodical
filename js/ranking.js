@@ -1,5 +1,5 @@
 import { DAY_MS, STOP_WORDS, getCategoryName } from './config.js';
-import { createSeededRandom, findMatchedKeywords, getPaperQuartile, hashString, truncateText } from './utils.js';
+import { abbreviateAuthorName, createSeededRandom, findMatchedAuthors, findMatchedKeywords, getPaperQuartile, hashString, truncateText } from './utils.js';
 import {
     addScaledVector,
     computeZScores,
@@ -211,6 +211,10 @@ export function rankCandidatePool(targetCount, excludedIds, seedSalt = '') {
     const ranking = normalizeRankingConfig(state.ranking);
     const weights = ranking.weights;
     const negPenaltyWeight = 0.7 * Math.min(1, negative.length / 6);
+    const activeFollowedAuthors = [
+        ...(state.followedAuthors || []),
+        ...(state.scix?.includeCollaborators !== false ? (state.scix?.collaborators || []) : []),
+    ];
 
     for (const row of rows) {
         const p = row.paper;
@@ -247,6 +251,9 @@ export function rankCandidatePool(targetCount, excludedIds, seedSalt = '') {
         const keywordBoost = matched.labels.length > 0
             ? 0.65 + 0.15 * Math.min(2, matched.labels.length - 1)
             : 0;
+
+        row.matchedAuthors = findMatchedAuthors(p, activeFollowedAuthors);
+        row.isFollowedAuthor = row.matchedAuthors.length > 0;
 
         row.score = (
             relevanceScore +
@@ -286,8 +293,17 @@ export function rankCandidatePool(targetCount, excludedIds, seedSalt = '') {
         : 0;
 
     const selected = [];
-    const remaining = rows.slice();
+    const pinnedRows = rows.filter((row) => row.isFollowedAuthor).sort((a, b) => b.score - a.score);
+    const remaining = rows.filter((row) => !row.isFollowedAuthor);
     const tau = pool.tau;
+
+    for (const picked of pinnedRows) {
+        selected.push(picked);
+        for (const other of remaining) {
+            const sim = dotProduct(other.paper.v, picked.paper.v);
+            other.redundancy = Math.max(other.redundancy, sim);
+        }
+    }
 
     function pickBestCandidate(scoreFn) {
         let bestIdx = -1;
@@ -350,6 +366,9 @@ export function explainSelection(row, queryVec, preferredCats, ranking = { sortB
     }
     if (ranking.sortBy === 'publications' && row.pubsRaw > 0) {
         return { kind: 'author', text: `${row.pubsRaw.toLocaleString()} author publications` };
+    }
+    if (row.matchedAuthors && row.matchedAuthors.length > 0) {
+        return { kind: 'author', text: `Followed author · ${abbreviateAuthorName(row.matchedAuthors[0])}` };
     }
     if (row.authorScore > 0.9 && row.hRaw > 0) {
         return { kind: 'author', text: `Influential authors (h-index ${row.hRaw})` };

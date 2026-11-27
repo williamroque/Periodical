@@ -26,10 +26,15 @@ export function normalizeRankingConfig(raw) {
 export function normalizeUserState(raw) {
     const base = structuredClone(DEFAULT_STATE);
     const loaded = { ...base, ...(raw || {}) };
+    loaded.followedAuthors = Array.isArray(loaded.followedAuthors) ? loaded.followedAuthors : [];
     loaded.ranking = normalizeRankingConfig(loaded.ranking);
     loaded.scix = { ...base.scix, ...(raw?.scix || {}) };
     loaded.scix.libraries = Array.isArray(loaded.scix.libraries) ? loaded.scix.libraries : [];
     loaded.scix.defaultLibIds = Array.isArray(loaded.scix.defaultLibIds) ? loaded.scix.defaultLibIds : [];
+    loaded.scix.authorQuery = typeof loaded.scix.authorQuery === 'string' ? loaded.scix.authorQuery : '';
+    loaded.scix.collaborators = Array.isArray(loaded.scix.collaborators) ? loaded.scix.collaborators : [];
+    loaded.scix.collaboratorsFetchedAt = Number(loaded.scix.collaboratorsFetchedAt) || 0;
+    loaded.scix.includeCollaborators = loaded.scix.includeCollaborators !== false;
     loaded.scix.queue = Array.isArray(loaded.scix.queue) ? loaded.scix.queue : [];
     loaded.scix.added = loaded.scix.added && typeof loaded.scix.added === 'object' ? loaded.scix.added : {};
     loaded.preferredDayOffset = Number.isFinite(Number(loaded.preferredDayOffset))

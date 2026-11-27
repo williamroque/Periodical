@@ -1,5 +1,6 @@
 import { DEFAULT_SCIX_PROXY } from './config.js';
 import { pool, scheduleSave, state } from './state.js';
+import { formatAuthorDisplayName, normalizeAuthorParts } from './utils.js';
 
 const WRITE_PERMISSIONS = new Set(['owner', 'admin', 'write']);
 const LIBRARY_CACHE_MS = 5 * 60 * 1000;
@@ -305,4 +306,68 @@ export function removeFromSciXQueue(arxivId) {
     const cleanId = normalizeArxivId(arxivId);
     state.scix.queue = state.scix.queue.filter((item) => item.id !== cleanId);
     scheduleSave();
+}
+
+export async function fetchSciXCollaborators(rawQuery) {
+    const trimmed = String(rawQuery || '').trim();
+    if (!trimmed) {
+        throw new Error('Enter your SciX author query or ORCID');
+    }
+
+    const query = /:/.test(trimmed) ? trimmed : `author:"${trimmed.replace(/"/g, '')}"`;
+    const params = new URLSearchParams({
+        q: query,
+        fl: 'author',
+        rows: '200',
+        sort: 'date desc',
+    });
+    const data = await scixRequest(`/v1/search/query?${params.toString()}`);
+    const docs = data?.response?.docs || [];
+    if (docs.length === 0) {
+        throw new Error('No SciX publications found for that query');
+    }
+
+    const validDocs = docs.filter((doc) => Array.isArray(doc.author) && doc.author.length >= 2 && doc.author.length <= 30);
+    const totalDocs = validDocs.length || 1;
+    const counts = new Map();
+
+    for (const doc of validDocs) {
+        const seenInDoc = new Set();
+        for (const rawName of doc.author) {
+            const parts = normalizeAuthorParts(rawName);
+            if (!parts || !parts.last || !parts.firstInitial) {
+                continue;
+            }
+            const key = `${parts.last}|${parts.firstInitial}`;
+            if (seenInDoc.has(key)) {
+                continue;
+            }
+            seenInDoc.add(key);
+            const display = formatAuthorDisplayName(rawName);
+            const existing = counts.get(key);
+            if (existing) {
+                existing.count += 1;
+                if (display.length > existing.name.length) {
+                    existing.name = display;
+                }
+            } else {
+                counts.set(key, { name: display, count: 1 });
+            }
+        }
+    }
+
+    // Exclude the user themselves (appears in >= 60% of their own papers)
+    const selfThreshold = Math.max(2, Math.ceil(totalDocs * 0.6));
+    const minCollabPapers = validDocs.length >= 8 ? 2 : 1;
+    const collaborators = [...counts.values()]
+        .filter((entry) => entry.count >= minCollabPapers && entry.count < selfThreshold)
+        .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
+        .slice(0, 60)
+        .map((entry) => entry.name);
+
+    state.scix.authorQuery = trimmed;
+    state.scix.collaborators = collaborators;
+    state.scix.collaboratorsFetchedAt = Date.now();
+    scheduleSave();
+    return { collaborators, paperCount: docs.length };
 }
